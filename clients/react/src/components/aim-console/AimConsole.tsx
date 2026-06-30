@@ -32,6 +32,7 @@
 
 import { type CSSProperties, useCallback, useState } from "react";
 import { useConfirm } from "@/components/layout/ConfirmDialog";
+import { advanceCursor, effectiveCursor } from "@/components/producer-console/r-panel/remote-delta";
 import type { AgentSnapshot, SlotResponse, TriggerHandoffRitualRequest } from "@/lib/api";
 import {
   AIM_CONSOLE_LAYOUT_DEFAULTS,
@@ -128,6 +129,32 @@ export function AimConsole({
   // tabs (S4). A cwd-synthesized unit isn't in the configured membership, so
   // `repos` is empty there — the footer falls back to `currentProjectPath`.
   const activeUnit = units.find((u) => u.name === activeUnitName) ?? null;
+
+  // Remote-Δ freshness cursors (#822; #606 §1 lift) — the SAME `remoteDeltaCursors`
+  // ui-pref the producer-console R panel owns, so a looking-act in either console
+  // is one human looking-act (the cursor is mode-independent, per-unit). Client
+  // state only, never sent to core; the Producer never reads it. `AimConsole`
+  // owns the cursor here (mirroring `RPanel`); `PrRail` is presentational and
+  // only receives the effective cursors. The rail has ONE close act — the rail
+  // collapse — so it stamps the coarse `panel` cursor, which via `effectiveCursor`
+  // = MAX(panel, section) clears BOTH sections (collapsing the whole rail = done
+  // looking at all of it). No section-level close acts, no timers, no per-row
+  // marking (the operator-ratified exclusion list).
+  const [cursors, setCursors] = useUIPref("remoteDeltaCursors");
+  const prsCursor =
+    activeUnitName === null ? null : effectiveCursor(cursors, activeUnitName, "prs");
+  const issuesCursor =
+    activeUnitName === null ? null : effectiveCursor(cursors, activeUnitName, "issues");
+  // Rail-collapse close act: stamp the unit's `panel` cursor (the "when the
+  // operator last stopped looking" timestamp), then collapse. Expanding the rail
+  // is the START of looking, not a close act, so `onExpand` stays the plain
+  // `setPrOpen(true)`.
+  const collapseRail = useCallback(() => {
+    if (activeUnitName !== null) {
+      setCursors(advanceCursor(cursors, activeUnitName, "panel", new Date().toISOString()));
+    }
+    setPrOpen(false);
+  }, [activeUnitName, cursors, setCursors]);
 
   // S7 drag-resizable layout. The persisted pref IS the layout state — a drag
   // adjusts the custom properties imperatively (no re-render per move, see
@@ -265,7 +292,9 @@ export function AimConsole({
             repos={activeUnit?.repos ?? []}
             open={prOpen}
             onExpand={() => setPrOpen(true)}
-            onCollapse={() => setPrOpen(false)}
+            onCollapse={collapseRail}
+            prsCursor={prsCursor}
+            issuesCursor={issuesCursor}
           />
         </section>
       </div>

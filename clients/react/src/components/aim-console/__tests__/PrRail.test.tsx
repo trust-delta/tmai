@@ -251,6 +251,121 @@ describe("PrRail — expanded panel groups", () => {
   });
 });
 
+describe("PrRail — remote-Δ freshness (#822 / #606 §1)", () => {
+  const CURSOR = "2026-06-20T00:00:00Z";
+  const NEWER = "2026-06-25T00:00:00Z"; // after the cursor → unobserved
+  const OLDER = "2026-06-10T00:00:00Z"; // before the cursor → observed
+
+  it("renders no Δ accent when no cursor is wired (undefined ⇒ accent-free)", () => {
+    // The default render passes no cursor props — existing isolation behaviour.
+    renderRail();
+    expect(screen.queryByTestId("ac-unobserved")).toBeNull();
+    expect(screen.queryByTestId("ac-rail-unobserved")).toBeNull();
+  });
+
+  it("marks only the rows whose vocab ts is newer than the section cursor", () => {
+    useUnitPrsMock.mockReturnValue(
+      prsResult({
+        unit: "tmai",
+        repos: [
+          {
+            repo_path: "/home/u/tmai",
+            repo_label: "tmai",
+            primary: true,
+            prs: [
+              pr({ number: 1n, title: "fresh", created_at: NEWER }),
+              pr({ number: 2n, title: "stale", created_at: OLDER }),
+              pr({ number: 3n, title: "no vocab" }), // all-null vocab → observed
+            ],
+          },
+        ],
+      }),
+    );
+    useUnitIssuesMock.mockReturnValue(issuesResult({ unit: "tmai", repos: [] }));
+    renderRail({ prsCursor: CURSOR, issuesCursor: CURSOR });
+
+    // Exactly one row (the NEWER one) carries the Δ accent.
+    const group = screen.getByTestId("ac-pr-group");
+    const rows = within(group).getAllByTestId("ac-pi");
+    const hasDelta = (i: number) => within(rows[i]).queryByTestId("ac-unobserved") !== null;
+    expect(hasDelta(0)).toBe(true); // #1 fresh
+    expect(hasDelta(1)).toBe(false); // #2 stale
+    expect(hasDelta(2)).toBe(false); // #3 no vocab
+  });
+
+  it("treats every row as unobserved on the first run (null cursor)", () => {
+    useUnitPrsMock.mockReturnValue(
+      prsResult({
+        unit: "tmai",
+        repos: [
+          {
+            repo_path: "/home/u/tmai",
+            repo_label: "tmai",
+            primary: true,
+            prs: [pr({ number: 1n, created_at: OLDER }), pr({ number: 2n, created_at: NEWER })],
+          },
+        ],
+      }),
+    );
+    useUnitIssuesMock.mockReturnValue(issuesResult({ unit: "tmai", repos: [] }));
+    renderRail({ prsCursor: null, issuesCursor: null });
+    // null = "no close act recorded yet" → the honest 一度も見ていない: both rows.
+    expect(screen.getAllByTestId("ac-unobserved")).toHaveLength(2);
+  });
+
+  it("shows the unit-total Δ on the collapsed rail (PR + Issue unobserved)", () => {
+    useUnitPrsMock.mockReturnValue(
+      prsResult({
+        unit: "tmai",
+        repos: [
+          {
+            repo_path: "/home/u/tmai",
+            repo_label: "tmai",
+            primary: true,
+            prs: [pr({ number: 1n, created_at: NEWER }), pr({ number: 2n, created_at: OLDER })],
+          },
+        ],
+      }),
+    );
+    useUnitIssuesMock.mockReturnValue(
+      issuesResult({
+        unit: "tmai",
+        repos: [
+          {
+            repo_path: "/home/u/tmai",
+            repo_label: "tmai",
+            primary: true,
+            issues: [issue({ number: 9n, created_at: NEWER })],
+          },
+        ],
+      }),
+    );
+    renderRail({ prsCursor: CURSOR, issuesCursor: CURSOR });
+    // 1 unobserved PR + 1 unobserved issue = Δ 2.
+    const rail = screen.getByTestId("ac-rail-unobserved");
+    expect(rail.textContent).toContain("2");
+  });
+
+  it("omits the collapsed-rail Δ when nothing is unobserved", () => {
+    useUnitPrsMock.mockReturnValue(
+      prsResult({
+        unit: "tmai",
+        repos: [
+          {
+            repo_path: "/home/u/tmai",
+            repo_label: "tmai",
+            primary: true,
+            prs: [pr({ number: 1n, created_at: OLDER })],
+          },
+        ],
+      }),
+    );
+    useUnitIssuesMock.mockReturnValue(issuesResult({ unit: "tmai", repos: [] }));
+    renderRail({ prsCursor: CURSOR, issuesCursor: CURSOR });
+    expect(screen.queryByTestId("ac-rail-unobserved")).toBeNull();
+  });
+});
+
 describe("PrRail — expand / collapse (S1 mechanism, threaded callbacks)", () => {
   it("clicking the collapsed rail calls onExpand", () => {
     const props = renderRail({ open: false });

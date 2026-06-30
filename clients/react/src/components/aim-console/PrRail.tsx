@@ -25,7 +25,32 @@
 // modifier + the grid transition + the `prOpen` state in `AimConsole`); this
 // component only renders the rail/panel CONTENT and calls back the threaded
 // `onExpand` / `onCollapse` — it never owns the open state.
+//
+// REMOTE-Δ FRESHNESS (#606 §1 / aim `pr-issue-ci` / instrument #822): the
+// remote-Δ instrument used to live ONLY in the producer-console R panel
+// (`RPrsSection` / `RIssuesSection`), so the aim-console — the DEFAULT surface
+// since #850/#851 — showed PR/issue rows but not "which changed since you last
+// looked" (a stranding regression, the same shape as the #897/#898 handoff
+// overlay lift). This rail now carries the instrument too. WHAT it reuses: the
+// pure `remote-delta.ts` helpers (logic, no theme — same import category as the
+// `prStatusPills` derivation). WHAT it does NOT reuse: the producer-console
+// `UnobservedDelta` component, because it carries the producer theme's
+// `text-info` token; the dev-tool Δ accent is its own `.ac-unobs` (cyan = the
+// aim-console info-family token), keeping the #801 bounding (touch ONLY
+// `aim-console/**` + `aim-console.css`). The cursor itself is OWNED by
+// `AimConsole` (the rail-collapse close act stamps the unit's `panel` cursor in
+// the SHARED `remoteDeltaCursors` ui-pref — looking via either console is one
+// human looking-act, so the cursor is mode-independent); this component is
+// presentational and only receives the effective cursors as props. The Δ is an
+// info-tone freshness FACT ("changed since 見ていた"), never the owed amber.
 
+import {
+  issueVocabTimestamp,
+  isUnobserved,
+  prVocabTimestamp,
+  unobservedIssueCount,
+  unobservedPrCount,
+} from "@/components/producer-console/r-panel/remote-delta";
 import {
   issueStatusPills,
   type PillTone,
@@ -63,6 +88,14 @@ interface PrRailProps {
    *  `AimConsole`. */
   onExpand: () => void;
   onCollapse: () => void;
+  /** Remote-Δ effective cursor for the PRs / Issues sections (#822), each =
+   *  MAX(unit panel close, that section's close), threaded from `AimConsole`
+   *  (which owns the shared `remoteDeltaCursors` ui-pref). `null` = no close
+   *  act recorded yet (first run → every row unobserved, the honest
+   *  「一度も見ていない」); `undefined` = no freshness wiring at all (e.g.
+   *  isolation tests / no focused unit), rows + rail render accent-free. */
+  prsCursor?: string | null;
+  issuesCursor?: string | null;
 }
 
 // Map a categorical pill tone to the mock's `.pst` colour modifier
@@ -77,7 +110,16 @@ const PST_TONE_CLASS: Record<PillTone, string> = {
   muted: "d", // draft / closed → --dim
 };
 
-export function PrRail({ unitName, unitLabel, repos, open, onExpand, onCollapse }: PrRailProps) {
+export function PrRail({
+  unitName,
+  unitLabel,
+  repos,
+  open,
+  onExpand,
+  onCollapse,
+  prsCursor,
+  issuesCursor,
+}: PrRailProps) {
   // One poll each, feeding BOTH the collapsed counts and the expanded lists
   // (so the rail never double-polls). The endpoints are open-only + already
   // unit-scoped across every repo, so the totals are the live open counts.
@@ -88,6 +130,16 @@ export function PrRail({ unitName, unitLabel, repos, open, onExpand, onCollapse 
   const issueRepos = issueData?.repos ?? [];
   const openPrCount = prRepos.reduce((n, r) => n + r.prs.length, 0);
   const openIssueCount = issueRepos.reduce((n, r) => n + r.issues.length, 0);
+
+  // Remote-Δ unobserved totals (#822). `undefined` cursor = no freshness wiring
+  // (isolation / no focused unit) → 0, so the rail renders accent-free exactly
+  // as before. `null` cursor (first run, no close act yet) → the helpers treat
+  // every row as unobserved. The collapsed rail shows the unit total so the
+  // operator sees "something changed" WITHOUT expanding — the whole point of a
+  // freshness instrument on a default-collapsed rail.
+  const unobservedTotal =
+    (prsCursor === undefined ? 0 : unobservedPrCount(prRepos, prsCursor)) +
+    (issuesCursor === undefined ? 0 : unobservedIssueCount(issueRepos, issuesCursor));
 
   return (
     <>
@@ -104,6 +156,18 @@ export function PrRail({ unitName, unitLabel, repos, open, onExpand, onCollapse 
             it just shows the live open PR count. */}
         <span className="ac-v w">PR {openPrCount}</span>
         <span className="ac-v">Issue {openIssueCount}</span>
+        {/* Remote-Δ unit total: unobserved PR + issue rows since the close act.
+            Within-unit count only — info-tone (cyan) freshness fact, never the
+            owed amber; no cross-unit accent (deferred until a second unit). */}
+        {unobservedTotal > 0 && (
+          <span
+            className="ac-v dl"
+            data-testid="ac-rail-unobserved"
+            title={`${unobservedTotal} unobserved remote ${unobservedTotal === 1 ? "change" : "changes"} since you last looked`}
+          >
+            Δ {unobservedTotal}
+          </span>
+        )}
         <span className="ac-g">‹ EXTERNAL</span>
       </button>
 
@@ -122,8 +186,8 @@ export function PrRail({ unitName, unitLabel, repos, open, onExpand, onCollapse 
           </button>
         </div>
         <div className="ac-prb">
-          <PrGroup repos={prRepos} count={openPrCount} />
-          <IssueGroup repos={issueRepos} count={openIssueCount} />
+          <PrGroup repos={prRepos} count={openPrCount} cursor={prsCursor} />
+          <IssueGroup repos={issueRepos} count={openIssueCount} cursor={issuesCursor} />
         </div>
       </div>
     </>
@@ -132,8 +196,17 @@ export function PrRail({ unitName, unitLabel, repos, open, onExpand, onCollapse 
 
 // "Pull Requests · N" — the unit's open PRs, gathered flat across every repo
 // (primary first, then declaration order, as the endpoint returns them), each
-// row tagged with its owning repo pill.
-function PrGroup({ repos, count }: { repos: RepoPrsWire[]; count: number }) {
+// row tagged with its owning repo pill. `cursor` threads the remote-Δ freshness
+// down to each row (undefined ⇒ accent-free).
+function PrGroup({
+  repos,
+  count,
+  cursor,
+}: {
+  repos: RepoPrsWire[];
+  count: number;
+  cursor?: string | null;
+}) {
   return (
     <div className="ac-prg" data-testid="ac-pr-group">
       <h4>Pull Requests · {count}</h4>
@@ -142,7 +215,7 @@ function PrGroup({ repos, count }: { repos: RepoPrsWire[]; count: number }) {
       ) : (
         repos.flatMap((repo) =>
           repo.prs.map((pr) => (
-            <PrRow key={`${repo.repo_path}#${pr.number}`} pr={pr} repo={repo} />
+            <PrRow key={`${repo.repo_path}#${pr.number}`} pr={pr} repo={repo} cursor={cursor} />
           )),
         )
       )}
@@ -151,7 +224,15 @@ function PrGroup({ repos, count }: { repos: RepoPrsWire[]; count: number }) {
 }
 
 // "Issues · N" — same shape, the unit's open issues across every repo.
-function IssueGroup({ repos, count }: { repos: RepoIssuesWire[]; count: number }) {
+function IssueGroup({
+  repos,
+  count,
+  cursor,
+}: {
+  repos: RepoIssuesWire[];
+  count: number;
+  cursor?: string | null;
+}) {
   return (
     <div className="ac-prg" data-testid="ac-issue-group">
       <h4>Issues · {count}</h4>
@@ -160,7 +241,12 @@ function IssueGroup({ repos, count }: { repos: RepoIssuesWire[]; count: number }
       ) : (
         repos.flatMap((repo) =>
           repo.issues.map((issue) => (
-            <IssueRow key={`${repo.repo_path}#${issue.number}`} issue={issue} repo={repo} />
+            <IssueRow
+              key={`${repo.repo_path}#${issue.number}`}
+              issue={issue}
+              repo={repo}
+              cursor={cursor}
+            />
           )),
         )
       )}
@@ -168,7 +254,15 @@ function IssueGroup({ repos, count }: { repos: RepoIssuesWire[]; count: number }
   );
 }
 
-function PrRow({ pr, repo }: { pr: PrSummaryWire; repo: RepoPrsWire }) {
+function PrRow({
+  pr,
+  repo,
+  cursor,
+}: {
+  pr: PrSummaryWire;
+  repo: RepoPrsWire;
+  cursor?: string | null;
+}) {
   return (
     <Row
       repoLabel={repo.repo_label}
@@ -176,11 +270,20 @@ function PrRow({ pr, repo }: { pr: PrSummaryWire; repo: RepoPrsWire }) {
       number={pr.number}
       title={pr.title}
       pills={prStatusPills(pr)}
+      unobserved={cursor !== undefined && isUnobserved(prVocabTimestamp(pr), cursor)}
     />
   );
 }
 
-function IssueRow({ issue, repo }: { issue: IssueSummaryWire; repo: RepoIssuesWire }) {
+function IssueRow({
+  issue,
+  repo,
+  cursor,
+}: {
+  issue: IssueSummaryWire;
+  repo: RepoIssuesWire;
+  cursor?: string | null;
+}) {
   return (
     <Row
       repoLabel={repo.repo_label}
@@ -188,28 +291,43 @@ function IssueRow({ issue, repo }: { issue: IssueSummaryWire; repo: RepoIssuesWi
       number={issue.number}
       title={issue.title}
       pills={issueStatusPills(issue)}
+      unobserved={cursor !== undefined && isUnobserved(issueVocabTimestamp(issue), cursor)}
     />
   );
 }
 
-// One inventory row (mock `.pi`): repo pill (primary highlighted) + `#number`
-// (mono) + single-line ellipsised title + categorical status pill(s).
-// Display-only — no click target (see file header).
+// One inventory row (mock `.pi`): an optional leading remote-Δ accent + repo
+// pill (primary highlighted) + `#number` (mono) + single-line ellipsised title
+// + categorical status pill(s). Display-only — no click target (see header).
 function Row({
   repoLabel,
   primary,
   number,
   title,
   pills,
+  unobserved,
 }: {
   repoLabel: string;
   primary: boolean;
   number: bigint;
   title: string;
   pills: StatusPill[];
+  unobserved?: boolean;
 }) {
   return (
     <div className="ac-pi" data-testid="ac-pi">
+      {/* Remote-Δ accent (#822): leading Δ when this row's vocab ts is newer
+          than the close-act cursor. Observed rows render no counterpart at all
+          — observed is the unmarked default, not a second badge. */}
+      {unobserved === true && (
+        <span
+          className="ac-unobs"
+          data-testid="ac-unobserved"
+          title="unobserved — changed since you last looked"
+        >
+          Δ
+        </span>
+      )}
       <span
         className={cn("ac-repo", primary && "pri")}
         data-testid="ac-pi-repo"
