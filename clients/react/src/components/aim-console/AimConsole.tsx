@@ -30,7 +30,14 @@
 // from the persisted `aimConsoleLayout` ui-pref, and drag end (not per-move)
 // writes it back.
 
-import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useConfirm } from "@/components/layout/ConfirmDialog";
 import { advanceCursor, effectiveCursor } from "@/components/producer-console/r-panel/remote-delta";
 import type { AgentSnapshot, SlotResponse, TriggerHandoffRitualRequest } from "@/lib/api";
@@ -126,6 +133,13 @@ interface AimConsoleProps {
   /** ⚙ deep-link into Settings (auto-handoff threshold), forwarded to the
    *  Producer's shead. */
   onOpenSettings: () => void;
+  /** The in-progress handoff overlay (App-built from the single
+   *  `useHandoffRitual` state), rendered INSIDE the Session column so a handoff
+   *  covers only the conversation — not the whole console. `absolute inset-0`
+   *  against `.ac-session`'s `position: relative`; `null` when no ritual runs
+   *  for the focused unit. Threaded in (not built here) so the existing console
+   *  keeps the single ritual instance. */
+  handoffOverlay?: ReactNode;
 }
 
 export function AimConsole({
@@ -139,6 +153,7 @@ export function AimConsole({
   currentProjectPath,
   trigger,
   onOpenSettings,
+  handoffOverlay,
 }: AimConsoleProps) {
   // Remote-panel state (root-layout `conversation-anchor`). The collapsed 46px
   // rail (right edge) `remoteOpen`s to the Remote panel. The DEFAULT open mode
@@ -341,7 +356,11 @@ export function AimConsole({
           conversation never shifts. `.ac-main` is the positioned ancestor the
           overlay drawer floats over (see aim-console.css). */}
       <div className="ac-main" ref={mainRef}>
-        {/* CONVERSATION — the anchor (tabs + shead + term + S4 bash footer) */}
+        {/* CONVERSATION — the anchor (tabs + shead + term + S4 bash footer).
+            `.ac-session` is `position: relative` so the in-progress handoff
+            overlay (`handoffOverlay`, `absolute inset-0`) scopes to THIS column:
+            a handoff covers only the conversation, leaving the top-bar unit
+            tabs, the Aim worklist, and the Remote rail usable. */}
         <section className="ac-col ac-session" aria-label="Session">
           <SessionPane
             agents={agents}
@@ -350,6 +369,7 @@ export function AimConsole({
             trigger={trigger}
             repos={activeUnit?.repos ?? []}
           />
+          {handoffOverlay}
         </section>
 
         {/* gutter A — Conversation|Aim (resizes the anchor width) */}

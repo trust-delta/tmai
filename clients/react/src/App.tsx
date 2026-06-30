@@ -709,31 +709,45 @@ export function App({
     <RIssueViewer selected={selectedIssue} onClose={clearIssue} />
   ) : null;
 
-  // App-level GLOBAL overlays — mode-INDEPENDENT. The handoff ritual UI
-  // (in-progress overlay / failure dialog / ready toast), the toast container,
-  // and the help overlay must stay co-visible whether the centre is the legacy
-  // producer shell OR the full-screen aim console (now the DEFAULT). These used
-  // to be inlined in the producer-mode return ONLY, so the aim-console default
-  // stranded the whole handoff ritual (phases + escalated/crash failures) and
-  // the toasts/help below the aim-mode early return — invisible in the default
-  // surface (hub #897, surfaced by tmai-core #589 ④). They are `fixed`-
-  // positioned, so the DOM parent doesn't affect layout, and only one mode
-  // branch renders at a time (no double-mount). The single `useHandoffRitual`
-  // instance still lives at App level (above) — two would mean two overlays.
+  // The IN-PROGRESS handoff overlay — scoped to the CONVERSATION PANEL, not a
+  // full-window takeover. A handoff busies ONE unit's conversation (its
+  // Producer is being killed + relaunched), so the overlay covers only that
+  // panel and leaves the unit tabs, the Aim worklist, and the Remote rail
+  // usable while the ritual runs — the operator can switch units, check PRs, or
+  // work the Aim tree instead of being walled out of the whole app. Rendered
+  // INSIDE the conversation panel in each mode (aim: the `.ac-session` column,
+  // via AimConsole's `handoffOverlay` prop; producer: the centre conversation
+  // div) — both panels are `position: relative` hosts for its `absolute inset-0`.
+  // Shown for the FOCUSED unit only, so switching units reveals the other unit's
+  // conversation cleanly; the ritual keeps running and re-appears on switch-back.
+  // (The terminal FAILURE dialog + ready toast + help stay app-global below —
+  // a failure / completion is app-level news, not one panel's busy-state.)
+  const handoffOverlay =
+    ritualState.kind === "dispatching" && unitName !== null ? (
+      <HandoffRitualOverlay unitName={unitName} ritualId={null} phases={[]} />
+    ) : ritualState.kind === "in_progress" && ritualState.unit === unitName ? (
+      <HandoffRitualOverlay
+        unitName={ritualState.unit}
+        ritualId={ritualState.ritualId}
+        phases={ritualState.phases}
+      />
+    ) : null;
+
+  // App-level GLOBAL overlays — mode-INDEPENDENT. The terminal handoff FAILURE
+  // dialog + ready toast, the toast container, and the help overlay must stay
+  // co-visible whether the centre is the legacy producer shell OR the
+  // full-screen aim console (now the DEFAULT). These used to be inlined in the
+  // producer-mode return ONLY, so the aim-console default stranded them below
+  // the aim-mode early return — invisible in the default surface (hub #897,
+  // surfaced by tmai-core #589 ④). They are `fixed`-positioned, so the DOM
+  // parent doesn't affect layout, and only one mode branch renders at a time
+  // (no double-mount). (The in-progress overlay is NO LONGER here — it moved
+  // into the conversation panel, see `handoffOverlay` above.) The single
+  // `useHandoffRitual` instance still lives at App level — two would mean two.
   const globalOverlays = (
     <>
       <HelpOverlay isOpen={showHelp} onClose={() => setShowHelp(false)} />
       <ToastContainer toasts={toast.toasts} onRemove={toast.removeToast} />
-      {ritualState.kind === "dispatching" && unitName !== null && (
-        <HandoffRitualOverlay unitName={unitName} ritualId={null} phases={[]} />
-      )}
-      {ritualState.kind === "in_progress" && (
-        <HandoffRitualOverlay
-          unitName={ritualState.unit}
-          ritualId={ritualState.ritualId}
-          phases={ritualState.phases}
-        />
-      )}
       {ritualState.kind === "escalated" && ritualState.unit !== "" && (
         <HandoffRitualFailureDialog
           unitName={ritualState.unit}
@@ -782,6 +796,7 @@ export function App({
           currentProjectPath={currentProject}
           trigger={triggerHandoff}
           onOpenSettings={openSettingsFromOverride}
+          handoffOverlay={handoffOverlay}
         />
         <ProducerLaunchPicker
           open={launchPickerOpen}
@@ -954,7 +969,12 @@ export function App({
           // ProducerConsole hand-over digest. Selecting an agent in the
           // sidebar drops into the conversation; clearing the selection
           // (returnToConsole) returns to the digest.
-          <div className="flex flex-1 flex-col overflow-hidden">
+          //
+          // `relative` makes this the positioned host for the in-progress
+          // handoff overlay (`handoffOverlay`, `absolute inset-0`): scoping it
+          // here covers the conversation while the sidebar + R panel stay
+          // usable, instead of the old app-wide fixed takeover.
+          <div className="relative flex flex-1 flex-col overflow-hidden">
             {/* One bar above the conversation. For the Producer it is the
                 merged ProducerConversationHeader — status dot + name +
                 Kill (subsuming AgentActions) PLUS the ctx% readout and
@@ -1003,6 +1023,9 @@ export function App({
                 onOpenSettings={openSettingsFromOverride}
               />
             )}
+            {/* In-progress handoff overlay — scoped to this conversation host
+                (`relative` above), translucent over whichever centre view shows. */}
+            {handoffOverlay}
           </div>
         )}
       </main>
