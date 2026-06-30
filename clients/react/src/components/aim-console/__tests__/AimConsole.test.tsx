@@ -142,7 +142,7 @@ describe("AimConsole — S1 shell", () => {
     expect(root.className).not.toContain("remote-dock");
   });
 
-  it("calls onSelectUnit / onAddUnit / onExit from the top bar", () => {
+  it("calls onSelectUnit / onAddUnit / onOpenSettings / onExit from the top bar", () => {
     const props = renderConsole();
 
     fireEvent.click(screen.getByRole("button", { name: "unit: tmai" }));
@@ -150,6 +150,10 @@ describe("AimConsole — S1 shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Add unit — launch Producer" }));
     expect(props.onAddUnit).toHaveBeenCalledTimes(1);
+
+    // ⚙ Settings lives in the app top-bar (config is app-level), not a Session shead.
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }));
+    expect(props.onOpenSettings).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole("button", { name: "Return to the Producer console" }));
     expect(props.onExit).toHaveBeenCalledTimes(1);

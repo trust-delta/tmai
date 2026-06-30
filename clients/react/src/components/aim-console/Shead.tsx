@@ -7,7 +7,8 @@
 //
 //   Producer: dot · name · model · ctx bar (with the auto-handoff threshold
 //             marker ┊) · pct · auto N% · unit/cwd · ⤺ handoff & restart ·
-//             ⚙ settings · ⟳ restart
+//             ⟳ restart   (⚙ Settings moved to the app top-bar — it is
+//             app-level config, not a per-conversation control.)
 //   Worker:   dot · name · model · ctx bar (violet accent) · pct ·
 //             repo/cwd · ✕ kill
 //
@@ -39,7 +40,7 @@ import { statusClass, statusWord } from "./session-status";
 interface SheadProps {
   /** The selected session agent this bar describes. */
   agent: AgentSnapshot;
-  /** Producer variant (ctx threshold marker + handoff ritual + settings)
+  /** Producer variant (ctx threshold marker + handoff ritual)
    *  vs worker variant (repo/cwd + kill only). */
   isProducer: boolean;
   /** Unit name — keys the handoff ritual endpoint (Producer variant). */
@@ -50,8 +51,6 @@ interface SheadProps {
   /** App-level lifted handoff ritual trigger (one `useHandoffRitual`
    *  instance, in App). */
   trigger: (unit: string, body: TriggerHandoffRitualRequest) => Promise<void>;
-  /** ⚙ deep-link into Settings (auto-handoff threshold). */
-  onOpenSettings: () => void;
 }
 
 function repoBasename(path: string): string {
@@ -173,21 +172,13 @@ function RestartButton({ target, launchPath }: { target: string; launchPath: str
   );
 }
 
-export function Shead({
-  agent,
-  isProducer,
-  unitName,
-  currentProjectPath,
-  trigger,
-  onOpenSettings,
-}: SheadProps) {
+export function Shead({ agent, isProducer, unitName, currentProjectPath, trigger }: SheadProps) {
   return isProducer ? (
     <ProducerShead
       agent={agent}
       unitName={unitName}
       currentProjectPath={currentProjectPath}
       trigger={trigger}
-      onOpenSettings={onOpenSettings}
     />
   ) : (
     <WorkerShead agent={agent} />
@@ -199,7 +190,6 @@ function ProducerShead({
   unitName,
   currentProjectPath,
   trigger,
-  onOpenSettings,
 }: Omit<SheadProps, "isProducer">) {
   const ctx = agent.ctx_usage ?? null;
   const [threshold, setThreshold] = useState<number | null>(null);
@@ -276,15 +266,6 @@ function ProducerShead({
           }
         >
           ⤺ handoff &amp; restart
-        </button>
-        <button
-          type="button"
-          className="ic"
-          onClick={onOpenSettings}
-          title="Open settings — auto-handoff threshold"
-          aria-label="Open settings — auto-handoff threshold"
-        >
-          ⚙
         </button>
         <RestartButton target={agent.target} launchPath={agent.cwd} />
       </span>

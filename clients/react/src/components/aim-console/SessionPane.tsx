@@ -54,8 +54,6 @@ interface SessionPaneProps {
   /** App-level lifted handoff ritual trigger (one `useHandoffRitual`
    *  instance, in App). Threaded straight into `ProducerConversationHeader`. */
   trigger: (unit: string, body: TriggerHandoffRitualRequest) => Promise<void>;
-  /** ⚙ deep-link into Settings (auto-handoff threshold). */
-  onOpenSettings: () => void;
   /** The focused unit's repos (primary first), threaded from AimConsole's
    *  membership list — one per-repo bash tab each in the docked footer (S4).
    *  Empty for a cwd-synthesized unit not in the configured membership; the
@@ -85,7 +83,6 @@ export function SessionPane({
   unitName,
   currentProjectPath,
   trigger,
-  onOpenSettings,
   repos,
 }: SessionPaneProps) {
   // Producer + workers for the focused unit. The Producer (if any) leads;
@@ -167,7 +164,6 @@ export function SessionPane({
           unitName={unitName}
           currentProjectPath={currentProjectPath}
           trigger={trigger}
-          onOpenSettings={onOpenSettings}
         />
       )}
 

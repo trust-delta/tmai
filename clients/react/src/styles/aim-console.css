@@ -224,6 +224,26 @@
   color: var(--faint);
   letter-spacing: 0.5px;
 }
+/* ⚙ Settings — app-level top-bar icon button (same affordance as the "+" add
+   button), beside the exit. Config is whole-console, not per-conversation. */
+.aim-console .ac-settings {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 10px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+  font-size: 13px;
+  border-radius: 4px;
+}
+.aim-console .ac-settings:hover {
+  color: var(--cyan);
+  border-color: var(--cyan-d);
+}
 /* exit back to the existing ProducerConsole (the default view). The
    ENTER toggle lives in StatusBar; this is its EXIT pair, since the
    full-window aim console replaces the existing chrome incl. StatusBar. */

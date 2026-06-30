@@ -134,7 +134,6 @@ function renderPane(overrides: Partial<Parameters<typeof SessionPane>[0]> = {}) 
     unitName: "tmai" as string | null,
     currentProjectPath: "/home/u/tmai" as string | null,
     trigger: vi.fn(),
-    onOpenSettings: vi.fn(),
     repos: [
       { path: "/home/u/tmai", primary: true },
       { path: "/home/u/tmai-core", primary: false },
