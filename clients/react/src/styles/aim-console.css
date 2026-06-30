@@ -251,9 +251,22 @@
    via the `--pr` change; a live drag suppresses the transition (below). */
 .aim-console .ac-main {
   display: grid;
-  grid-template-columns: var(--aim, 1.18fr) 5px var(--sess, 1fr) 5px var(--pr, 46px);
+  /* Conversation anchor (fixed px, capped to 62vw live) | gutA | Aim (1fr, the
+     sole absorber) | gutB (0px inert) | Remote rail (46px). The anchor is the
+     operator's fixation point — keeping it a fixed track and the Aim the only
+     fr track means opening / docking the Remote never shifts the conversation. */
+  grid-template-columns:
+    clamp(360px, var(--conv, 720px), 62vw) 5px minmax(0, 1fr) 0px 46px;
   min-height: 0;
+  /* Containing block for the overlay Remote drawer (see `.ac-prfull`). */
+  position: relative;
   transition: grid-template-columns 0.2s ease;
+}
+/* Docked Remote: gutB becomes a real 5px gutter and the Remote a --pr column;
+   the Aim (1fr) absorbs the width, so the conversation anchor still never moves. */
+.aim-console.remote-dock .ac-main {
+  grid-template-columns:
+    clamp(360px, var(--conv, 720px), 62vw) 5px minmax(0, 1fr) 5px var(--pr, 360px);
 }
 .aim-console .ac-col {
   min-width: 0;
@@ -1026,7 +1039,7 @@
   background: transparent;
   cursor: pointer;
 }
-.aim-console.pr-open .ac-prrail {
+.aim-console.remote-open .ac-prrail {
   display: none;
 }
 .aim-console .ac-prrail .ac-v {
@@ -1065,8 +1078,35 @@
   flex-direction: column;
   height: 100%;
 }
-.aim-console.pr-open .ac-prfull {
+/* Open = the default OVERLAY: the panel floats over the right of the Aim pane.
+   `.ac-pr` (the 46px rail track) becomes positioned + non-clipping so the panel
+   (abspos, width --pr) extends leftwards over the Aim without reflowing it —
+   the conversation + Aim columns don't move; only the Aim's right is covered. */
+.aim-console.remote-open .ac-pr {
+  position: relative;
+  overflow: visible;
+  z-index: 5;
+}
+.aim-console.remote-open .ac-prfull {
   display: flex;
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: var(--pr, 360px);
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  box-shadow: -22px 0 46px -24px rgba(0, 0, 0, 0.5);
+}
+/* DOCKED: the panel sits in-flow, filling the --pr Remote column (the Aim pane
+   shrank to make room); no overlay float. */
+.aim-console.remote-dock .ac-pr {
+  position: static;
+  overflow: hidden;
+  z-index: auto;
+}
+.aim-console.remote-dock .ac-prfull {
+  position: static;
+  width: auto;
+  box-shadow: none;
 }
 .aim-console .ac-prh {
   display: flex;
@@ -1076,6 +1116,24 @@
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--dim);
+}
+/* Dock ⇄ float toggle (⊟ / ⊞), then the collapse ✕; the dock button carries
+   the margin so the pair sits flush-right (the ✕ keeps its own auto for the
+   isolation case where no dock control renders). */
+.aim-console .ac-prh .ac-prdock {
+  margin-left: auto;
+  margin-right: 11px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+.aim-console .ac-prh .ac-prdock:hover {
+  color: var(--txt);
+}
+.aim-console .ac-prh .ac-prdock.on {
+  color: var(--cyan);
 }
 .aim-console .ac-prh .ac-x {
   margin-left: auto;
@@ -2568,4 +2626,9 @@
 /* modal drop shadow (dark #000) → soft cool shadow on light */
 [data-theme="light"] .aim-console .ac-modal {
   box-shadow: 0 24px 70px -22px rgba(39, 50, 48, 0.18);
+}
+
+/* Remote overlay drawer float shadow (dark rgba black) → soft cool on light */
+[data-theme="light"] .aim-console.remote-open .ac-prfull {
+  box-shadow: -22px 0 46px -24px rgba(39, 50, 48, 0.2);
 }

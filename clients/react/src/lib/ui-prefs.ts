@@ -19,16 +19,19 @@ import { DEFAULT_THEME_MODE, THEME_MODES, type ThemeMode } from "@/lib/theme";
 export type AimMode = "frontier" | "tree";
 export const AIM_MODES: readonly AimMode[] = ["frontier", "tree"];
 
-// Drag-resized aim-console layout (S7). `aim`/`sess` are the pane fr WEIGHTS
-// (the live px captured at drag end, used as `Nfr` so the panes keep scaling
-// with the window); `pr` the expanded PR-rail width in px; `footer` the bash
-// footer's terminal-area height in px (the mock's `--fh`). `null` = never
-// dragged / reset — the console then uses AIM_CONSOLE_LAYOUT_DEFAULTS, and a
-// double-click reset stores `null` rather than a copy of the defaults so a
-// future default change reaches untouched layouts.
+// Drag-resized aim-console layout. `conv` is the Conversation (Session) pane's
+// width in PX — the fixed left-edge ANCHOR: it is the operator's continuous
+// fixation point, so expanding the Remote panel must never shift it. Keeping it
+// a fixed px (not an fr weight) makes the Aim pane (1fr) the sole absorber of
+// every Remote state change, so the conversation is structurally non-perturbable
+// (and a capped reading width is a feature for the chat column). `pr` is the
+// Remote panel's open width in px (overlay drawer + docked column); `footer` the
+// bash footer's terminal-area height in px. `null` = never dragged / reset — the
+// console then uses AIM_CONSOLE_LAYOUT_DEFAULTS, and a double-click reset stores
+// `null` rather than a copy of the defaults so a future default change reaches
+// untouched layouts.
 export interface AimConsoleLayout {
-  aim: number;
-  sess: number;
+  conv: number;
   pr: number;
   footer: number;
 }
@@ -116,6 +119,12 @@ export const ATTENTION_STRIP_WIDTH_DEFAULT = 320;
 export const AIM_CONSOLE_PR_WIDTH_MIN = 240;
 export const AIM_CONSOLE_PR_WIDTH_MAX = 520;
 export const AIM_CONSOLE_FOOTER_MIN = 110;
+// Conversation anchor width (px). Floor keeps it readable; ceiling is enforced
+// LIVE in CSS as a vw cap (clamp(...,62vw)) so a wide stored value never starves
+// the Aim + Remote side on a small window — storage only enforces the floor and
+// a sane absolute ceiling.
+export const AIM_CONSOLE_CONV_WIDTH_MIN = 360;
+export const AIM_CONSOLE_CONV_WIDTH_MAX = 1400;
 
 // aim-inspector (detail panel) drag-resize bounds (px). Floor-only: the
 // ceiling is a live 70vh cap applied in CSS (min(var, 70vh)), so storage only
@@ -124,9 +133,8 @@ export const AIM_INSPECTOR_HEIGHT_MIN = 140;
 export const AIM_INSPECTOR_HEIGHT_DEFAULT = 400;
 
 export const AIM_CONSOLE_LAYOUT_DEFAULTS: AimConsoleLayout = {
-  aim: 1.18,
-  sess: 1,
-  pr: 320,
+  conv: 720,
+  pr: 360,
   footer: 180,
 };
 
@@ -181,6 +189,18 @@ export function clampAimConsolePrWidth(value: number): number {
   return Math.max(AIM_CONSOLE_PR_WIDTH_MIN, Math.min(AIM_CONSOLE_PR_WIDTH_MAX, Math.round(value)));
 }
 
+// Conversation anchor width — same compose-with-coerce convention as the PR
+// width: the drag commit path clamps with the rule coerce applies on load. The
+// vw ceiling is applied LIVE in CSS, so this only enforces the px floor + a sane
+// absolute ceiling.
+export function clampAimConsoleConvWidth(value: number): number {
+  if (!Number.isFinite(value)) return AIM_CONSOLE_LAYOUT_DEFAULTS.conv;
+  return Math.max(
+    AIM_CONSOLE_CONV_WIDTH_MIN,
+    Math.min(AIM_CONSOLE_CONV_WIDTH_MAX, Math.round(value)),
+  );
+}
+
 // Floor-only: the footer's ceiling (60% of the Session pane) is a LIVE
 // measurement the storage layer cannot know — the console re-clamps it on
 // mount / drag / window resize.
@@ -201,30 +221,20 @@ export function clampAimInspectorHeight(value: number): number {
 // of today's defaults into every blob.
 export function normalizeAimConsoleLayout(layout: AimConsoleLayout): AimConsoleLayout | null {
   const d = AIM_CONSOLE_LAYOUT_DEFAULTS;
-  if (
-    layout.aim === d.aim &&
-    layout.sess === d.sess &&
-    layout.pr === d.pr &&
-    layout.footer === d.footer
-  ) {
+  if (layout.conv === d.conv && layout.pr === d.pr && layout.footer === d.footer) {
     return null;
   }
   return layout;
-}
-
-// Pane fr weights are free-form positive numbers (1.18 at rest, live px after
-// a drag) — only reject the degenerate ones that would zero out a pane.
-function coerceFrWeight(value: unknown, fallback: number): number {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return fallback;
-  return value;
 }
 
 function coerceAimConsoleLayout(value: unknown): AimConsoleLayout | null {
   if (value === null || value === undefined || typeof value !== "object") return null;
   const v = value as Record<string, unknown>;
   return normalizeAimConsoleLayout({
-    aim: coerceFrWeight(v.aim, AIM_CONSOLE_LAYOUT_DEFAULTS.aim),
-    sess: coerceFrWeight(v.sess, AIM_CONSOLE_LAYOUT_DEFAULTS.sess),
+    conv:
+      typeof v.conv === "number"
+        ? clampAimConsoleConvWidth(v.conv)
+        : AIM_CONSOLE_LAYOUT_DEFAULTS.conv,
     pr: typeof v.pr === "number" ? clampAimConsolePrWidth(v.pr) : AIM_CONSOLE_LAYOUT_DEFAULTS.pr,
     footer:
       typeof v.footer === "number"

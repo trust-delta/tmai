@@ -115,19 +115,31 @@ describe("AimConsole — S1 shell", () => {
     expect(pills[1].getAttribute("data-primary")).toBe("false");
   });
 
-  it("expands and collapses the PR rail (the S1 transition, via .pr-open)", () => {
+  it("opens the Remote as an OVERLAY by default; ⊟ docks it; ✕ collapses + resets to overlay", () => {
     renderConsole();
     const root = screen.getByTestId("aim-console");
-    // Collapsed by default.
-    expect(root.className).not.toContain("pr-open");
+    // Collapsed by default — neither open nor docked.
+    expect(root.className).not.toContain("remote-open");
+    expect(root.className).not.toContain("remote-dock");
 
-    // Click the collapsed rail → expands.
+    // Click the collapsed rail → opens as the default OVERLAY (open, not docked).
     fireEvent.click(screen.getByRole("button", { name: "Expand PR / Issue rail" }));
-    expect(root.className).toContain("pr-open");
+    expect(root.className).toContain("remote-open");
+    expect(root.className).not.toContain("remote-dock");
 
-    // The expanded panel's close (✕) → collapses again.
+    // ⊟ docks (push the Aim aside — both visible).
+    fireEvent.click(screen.getByRole("button", { name: "Dock the Remote panel" }));
+    expect(root.className).toContain("remote-dock");
+    // ⊞ floats it back to overlay.
+    fireEvent.click(screen.getByRole("button", { name: "Float the Remote panel (overlay)" }));
+    expect(root.className).not.toContain("remote-dock");
+
+    // Re-dock, then collapse: ✕ closes AND resets the mode to overlay default.
+    fireEvent.click(screen.getByRole("button", { name: "Dock the Remote panel" }));
+    expect(root.className).toContain("remote-dock");
     fireEvent.click(screen.getByRole("button", { name: "Collapse PR / Issue rail" }));
-    expect(root.className).not.toContain("pr-open");
+    expect(root.className).not.toContain("remote-open");
+    expect(root.className).not.toContain("remote-dock");
   });
 
   it("calls onSelectUnit / onAddUnit / onExit from the top bar", () => {

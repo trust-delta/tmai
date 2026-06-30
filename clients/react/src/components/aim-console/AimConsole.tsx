@@ -37,13 +37,14 @@ import type { AgentSnapshot, SlotResponse, TriggerHandoffRitualRequest } from "@
 import {
   AIM_CONSOLE_LAYOUT_DEFAULTS,
   type AimConsoleLayout,
+  clampAimConsoleConvWidth,
   clampAimConsolePrWidth,
   normalizeAimConsoleLayout,
 } from "@/lib/ui-prefs";
 import { useUIPref } from "@/lib/ui-prefs-provider";
 import { cn } from "@/lib/utils";
 import { AimPane } from "./AimPane";
-import { AimSessionGutter, SessionPrGutter } from "./Gutters";
+import { AimRemoteGutter, ConvAimGutter } from "./Gutters";
 import { PrRail } from "./PrRail";
 import { SessionPane } from "./SessionPane";
 // Bundled dev-tool typography (offline-robust @fontsource, NOT a Google Fonts
@@ -118,12 +119,17 @@ export function AimConsole({
   trigger,
   onOpenSettings,
 }: AimConsoleProps) {
-  // PR-rail expand state — the S1 shell's mechanism. The collapsed 46px rail
-  // expands via the `.pr-open` modifier on the root + the inline `--pr`
-  // (S7: the persisted drag width, 320px default). The state stays HERE;
-  // `PrRail` only renders the rail/panel CONTENT (S5) and calls back to
-  // toggle it.
-  const [prOpen, setPrOpen] = useState(false);
+  // Remote-panel state (root-layout `conversation-anchor`). The collapsed 46px
+  // rail (right edge) `remoteOpen`s to the Remote panel. The DEFAULT open mode
+  // is an OVERLAY drawer that floats over the right of the Aim pane — the
+  // Conversation (left, fixed-px anchor) and Aim columns do NOT reflow, so the
+  // operator's fixation point never shifts. `remoteDocked` is the transient
+  // opt-in to push the Aim pane aside instead (both visible side-by-side); it
+  // resets to overlay on close (no persisted mode — a momentary need, not a
+  // standing preference). The state stays HERE; `PrRail` renders the
+  // rail/panel CONTENT and calls back to toggle.
+  const [remoteOpen, setRemoteOpen] = useState(false);
+  const [remoteDocked, setRemoteDocked] = useState(false);
   const metaUnit = activeUnitName ?? units[0]?.name ?? "—";
   // The focused unit's repos drive the Session pane's per-repo bash footer
   // tabs (S4). A cwd-synthesized unit isn't in the configured membership, so
@@ -145,54 +151,58 @@ export function AimConsole({
     activeUnitName === null ? null : effectiveCursor(cursors, activeUnitName, "prs");
   const issuesCursor =
     activeUnitName === null ? null : effectiveCursor(cursors, activeUnitName, "issues");
-  // Rail-collapse close act: stamp the unit's `panel` cursor (the "when the
-  // operator last stopped looking" timestamp), then collapse. Expanding the rail
-  // is the START of looking, not a close act, so `onExpand` stays the plain
-  // `setPrOpen(true)`.
-  const collapseRail = useCallback(() => {
+  // Remote-collapse close act: stamp the unit's `panel` cursor (the "when the
+  // operator last stopped looking" timestamp), then collapse + reset the dock
+  // mode to the overlay default. Expanding is the START of looking, not a close
+  // act, so opening stays the plain `setRemoteOpen(true)`.
+  const collapseRemote = useCallback(() => {
     if (activeUnitName !== null) {
       setCursors(advanceCursor(cursors, activeUnitName, "panel", new Date().toISOString()));
     }
-    setPrOpen(false);
+    setRemoteOpen(false);
+    setRemoteDocked(false);
   }, [activeUnitName, cursors, setCursors]);
 
-  // S7 drag-resizable layout. The persisted pref IS the layout state — a drag
+  // Drag-resizable layout. The persisted pref IS the layout state — a drag
   // adjusts the custom properties imperatively (no re-render per move, see
   // `Gutters`) and commits here once on pointerup; the committed values then
   // render as the same inline custom properties, so React reconciliation and
   // the imperative drag agree. `null` = untouched → defaults.
   const [storedLayout, setStoredLayout] = useUIPref("aimConsoleLayout");
   const layout: AimConsoleLayout = storedLayout ?? AIM_CONSOLE_LAYOUT_DEFAULTS;
+  const conv = clampAimConsoleConvWidth(layout.conv);
+  const pr = clampAimConsolePrWidth(layout.pr);
   const layoutStyle = {
-    "--aim": `${layout.aim}fr`,
-    "--sess": `${layout.sess}fr`,
-    // Collapsed rail: leave `--pr` to the stylesheet's 46px so the stored
-    // expanded width survives without driving the collapsed track.
-    "--pr": prOpen ? `${clampAimConsolePrWidth(layout.pr)}px` : undefined,
+    // Conversation anchor width (capped to 62vw live so a wide value never
+    // starves the Aim + Remote side on a small window).
+    "--conv": `${conv}px`,
+    // Drives the overlay drawer width + the docked Remote track only while open;
+    // collapsed leaves it to the stylesheet's 46px rail so the stored open width
+    // survives a collapse.
+    "--pr": remoteOpen ? `${pr}px` : undefined,
   } as CSSProperties;
 
-  const commitPanes = useCallback(
-    (aim: number, sess: number) =>
+  const commitConv = useCallback(
+    (c: number) =>
       setStoredLayout(
-        normalizeAimConsoleLayout({ ...(storedLayout ?? AIM_CONSOLE_LAYOUT_DEFAULTS), aim, sess }),
+        normalizeAimConsoleLayout({ ...(storedLayout ?? AIM_CONSOLE_LAYOUT_DEFAULTS), conv: c }),
       ),
     [storedLayout, setStoredLayout],
   );
-  const resetPanes = useCallback(
+  const resetConv = useCallback(
     () =>
       setStoredLayout(
         normalizeAimConsoleLayout({
           ...(storedLayout ?? AIM_CONSOLE_LAYOUT_DEFAULTS),
-          aim: AIM_CONSOLE_LAYOUT_DEFAULTS.aim,
-          sess: AIM_CONSOLE_LAYOUT_DEFAULTS.sess,
+          conv: AIM_CONSOLE_LAYOUT_DEFAULTS.conv,
         }),
       ),
     [storedLayout, setStoredLayout],
   );
   const commitPr = useCallback(
-    (pr: number) =>
+    (prPx: number) =>
       setStoredLayout(
-        normalizeAimConsoleLayout({ ...(storedLayout ?? AIM_CONSOLE_LAYOUT_DEFAULTS), pr }),
+        normalizeAimConsoleLayout({ ...(storedLayout ?? AIM_CONSOLE_LAYOUT_DEFAULTS), pr: prPx }),
       ),
     [storedLayout, setStoredLayout],
   );
@@ -209,7 +219,11 @@ export function AimConsole({
 
   return (
     <div
-      className={cn("aim-console", prOpen && "pr-open")}
+      className={cn(
+        "aim-console",
+        remoteOpen && "remote-open",
+        remoteOpen && remoteDocked && "remote-dock",
+      )}
       data-testid="aim-console"
       style={layoutStyle}
     >
@@ -249,21 +263,14 @@ export function AimConsole({
         </button>
       </div>
 
-      {/* ── 3-pane grid + 5px gutter tracks (S7) ── */}
+      {/* ── 3-pane grid (Conversation anchor | Aim | Remote) + gutters ──
+          Order: Conversation LEFT (the fixed-px fixation anchor) → Aim MIDDLE
+          (1fr, the sole absorber) → Remote RIGHT (rail / overlay / docked). So
+          opening / docking the Remote only ever moves the Aim pane; the
+          conversation never shifts. `.ac-main` is the positioned ancestor the
+          overlay drawer floats over (see aim-console.css). */}
       <div className="ac-main">
-        {/* AIM — S2 worklist (Frontier⊥Tree, ledger, ruler, inspector, modal) */}
-        <section className="ac-col ac-aim" aria-label="Aim">
-          <AimPane unitName={activeUnitName} />
-        </section>
-
-        {/* gutter A — Aim|Session */}
-        <AimSessionGutter
-          aimShare={(layout.aim / (layout.aim + layout.sess)) * 100}
-          onCommit={commitPanes}
-          onReset={resetPanes}
-        />
-
-        {/* SESSION — S3 conversation (tabs + shead + term) + S4 bash footer */}
+        {/* CONVERSATION — the anchor (tabs + shead + term + S4 bash footer) */}
         <section className="ac-col ac-session" aria-label="Session">
           <SessionPane
             agents={agents}
@@ -275,24 +282,35 @@ export function AimConsole({
           />
         </section>
 
-        {/* gutter B — Session|PR (inert while the rail is collapsed) */}
-        <SessionPrGutter
-          open={prOpen}
-          prWidth={clampAimConsolePrWidth(layout.pr)}
+        {/* gutter A — Conversation|Aim (resizes the anchor width) */}
+        <ConvAimGutter convWidth={conv} onCommit={commitConv} onReset={resetConv} />
+
+        {/* AIM — worklist (Frontier⊥Tree, ledger, ruler, inspector, modal) */}
+        <section className="ac-col ac-aim" aria-label="Aim">
+          <AimPane unitName={activeUnitName} />
+        </section>
+
+        {/* gutter B — Aim|Remote (only active while the Remote is DOCKED;
+            inert as a 0px collapsed/overlay track) */}
+        <AimRemoteGutter
+          active={remoteOpen && remoteDocked}
+          prWidth={pr}
           onCommit={commitPr}
           onReset={resetPr}
         />
 
-        {/* PR RAIL — collapsed rail ⇄ expanded panel (S1 mechanism); the
-            per-repo PR + Issue lists + live counts are the real S5 content */}
+        {/* REMOTE — collapsed rail ⇄ overlay drawer ⇄ docked column. The
+            per-repo PR + Issue lists + live counts + remote-Δ are the content. */}
         <section className="ac-col ac-pr" aria-label="PR / Issue rail">
           <PrRail
             unitName={activeUnitName}
             unitLabel={metaUnit}
             repos={activeUnit?.repos ?? []}
-            open={prOpen}
-            onExpand={() => setPrOpen(true)}
-            onCollapse={collapseRail}
+            open={remoteOpen}
+            docked={remoteOpen && remoteDocked}
+            onExpand={() => setRemoteOpen(true)}
+            onCollapse={collapseRemote}
+            onToggleDock={() => setRemoteDocked((d) => !d)}
             prsCursor={prsCursor}
             issuesCursor={issuesCursor}
           />
