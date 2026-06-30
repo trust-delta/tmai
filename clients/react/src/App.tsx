@@ -788,6 +788,28 @@ export function App({
           onClose={() => setLaunchPickerOpen(false)}
           onLaunchProducerAt={launchProducerAt}
         />
+        {/* Settings in aim mode — the producer console renders SettingsPanel
+            inline in its centre pane, but the aim console is a full-window
+            takeover, so the SAME `showSettings` state surfaces here as a modal
+            overlay (lifted past the aim-mode early return — same shape as the
+            #897 globalOverlays / #907 remote-Δ lifts). The top-bar ⚙ sets it;
+            the panel's own close button + the backdrop dismiss it. */}
+        {showSettings && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+            {/* biome-ignore lint/a11y/useKeyWithClickEvents: backdrop tap to close */}
+            {/* biome-ignore lint/a11y/noStaticElementInteractions: backdrop tap to close */}
+            <div
+              className="absolute inset-0 bg-background/70 backdrop-blur-sm animate-fade-in"
+              onClick={closeMainPanelOverlay}
+            />
+            <div className="relative flex h-[85vh] w-[min(880px,92vw)] flex-col overflow-hidden rounded-xl border border-hairline-strong bg-background shadow-2xl animate-scale-in">
+              <SettingsPanel
+                onClose={closeMainPanelOverlay}
+                defaultOpenAdvanced={settingsOpenedFromOverride}
+              />
+            </div>
+          </div>
+        )}
         {globalOverlays}
       </>
     );
