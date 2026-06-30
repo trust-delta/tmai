@@ -2407,3 +2407,147 @@
     animation-duration: 0.01ms !important;
   }
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   LIGHT THEME — the dev-tool palette inverted for [data-theme="light"].
+
+   `applyThemeToDocument` sets `data-theme` on <html> (theme.ts); the rest of
+   the WebUI re-skins via the semantic --color-* vars, but the aim console paints
+   from the dev-tool tokens above, which are a fixed DARK palette. This block is
+   PURELY ADDITIVE — it overrides those tokens (and the handful of rules that
+   hardcode a hex outside the token block) ONLY under `[data-theme="light"]`, so
+   the default DARK surface is byte-for-byte unchanged. The `[data-theme]` +
+   class selector outranks the bare `.aim-console` rules, so source order is
+   irrelevant.
+
+   This is NOT the app's Tokyo Night Day theme — the aim console has its own
+   bespoke "dev-tool / scale" design language (`origin/mock/aim-ui-sample`):
+   cool, low-chroma, instrument-like, with semantic accents (amber=drift/owed,
+   ochre=claimed, green=confirmed/calm, cyan=structure/root/select,
+   violet=worker). The light mode PRESERVES that language — same accent HUES and
+   restraint, only the lightness is inverted: a soft cool-gray paper instead of
+   the near-black canvas, accents darkened just enough to read on light (never
+   brightened into candy), and the dark near-black "deep accent" washes (--*-d)
+   become pale accent tints. Cohesive with the dark, not borrowed from elsewhere.
+   ════════════════════════════════════════════════════════════════════════ */
+
+[data-theme="light"] .aim-console {
+  --bg: #e8ebe9; /* soft cool paper — echoes the dark's cool near-black canvas */
+  --panel: #eef1ef; /* pane surface, a touch lighter than the canvas */
+  --panel-2: #eef1ef00;
+  --elev: #f8faf8; /* raised / active — near white */
+  --line: #d2d8d5; /* hairline */
+  --line-2: #e0e4e1; /* subtler hairline */
+  --txt: #273230; /* dark cool gray — soft, not black */
+  --dim: #5c6864; /* muted label */
+  --faint: #96a19c; /* faint */
+  --amber: #9a7327; /* drift / owed — muted gold */
+  --amber-d: #f2e8d1; /* pale gold wash */
+  --ochre: #8c6a33; /* claimed — muted brown-gold */
+  --ochre-d: #efe6d4; /* pale ochre wash */
+  --green: #2f7d61; /* confirmed / calm — muted teal-green */
+  --green-d: #dbeae3; /* pale green wash */
+  --cyan: #2c827b; /* structure / root / select — muted teal */
+  --cyan-d: #d6eae6; /* pale teal wash */
+  --violet: #6a55b8; /* worker — muted violet */
+  --violet-d: #e7e1f5; /* pale violet wash */
+  --danger: #bf473f; /* muted brick red */
+}
+
+/* scrollbar thumb (dark #19201f) */
+[data-theme="light"] .aim-console ::-webkit-scrollbar-thumb {
+  background: #ccd3cf;
+}
+
+/* amber borders (dark #3a2e14 / dashed #3a2e1a) → pale gold border */
+[data-theme="light"] .aim-console .ac-um,
+[data-theme="light"] .aim-console .ac-shead .ho:hover,
+[data-theme="light"] .aim-console .ac-prrail .ac-v.w,
+[data-theme="light"] .aim-console .ac-pst.r,
+[data-theme="light"] .aim-console .ac-pill.dr,
+[data-theme="light"] .aim-console .ac-tg.k {
+  border-color: #e1d3a8;
+}
+
+/* red / danger tints (dark bg #221111, border #3a1d1d) → pale red tint */
+[data-theme="light"] .aim-console .ac-um.call,
+[data-theme="light"] .aim-console .ac-uclose:hover,
+[data-theme="light"] .aim-console .ac-pst.f {
+  background: #f6dedb;
+}
+[data-theme="light"] .aim-console .ac-um.call,
+[data-theme="light"] .aim-console .ac-pst.f {
+  border-color: #e6b2ab;
+}
+
+/* deep insets / wells (dark #070a0b / #090d0e / #0c1110 / #0c1314) → a
+   recessed surface reads slightly DARKER than the panel on a light bg */
+[data-theme="light"] .aim-console .ac-lbar,
+[data-theme="light"] .aim-console .ac-ruler,
+[data-theme="light"] .aim-console .ac-repohead {
+  background: #dfe3e0;
+}
+/* ledger progress bar — the owed (amber) fill reads heavy as a dark stripe on
+   the pale track; lighten it to an elegant gold gauge (echoing the dark's thin
+   bright line), and give the done segment a soft, faintly-visible green. */
+[data-theme="light"] .aim-console .ac-lbar .o {
+  background: #c2a052;
+}
+[data-theme="light"] .aim-console .ac-lbar .c {
+  background: #a9cdbb;
+}
+
+/* terminal container (dark #070a0b) → neutral light surface */
+[data-theme="light"] .aim-console .ac-term {
+  background: #e6e9e7;
+}
+
+/* selected row tint (dark #0f1818, cyan-ish) → pale teal */
+[data-theme="light"] .aim-console .ac-r.sel {
+  background: #dcebe8;
+}
+
+/* ruler faint label (dark #313c3b) */
+[data-theme="light"] .aim-console .ac-ruler::before {
+  color: #96a19c;
+}
+
+/* cyan accents — new-aim + primary buttons (dark border #1f4541, hover #163a38) */
+[data-theme="light"] .aim-console .ac-newbtn,
+[data-theme="light"] .aim-console .ac-btn.primary,
+[data-theme="light"] .aim-console .ac-btn:hover {
+  border-color: #bcdcd7;
+}
+[data-theme="light"] .aim-console .ac-newbtn:hover,
+[data-theme="light"] .aim-console .ac-btn.primary:hover {
+  background: #d6eae6;
+}
+
+/* gutters — neutral / dead row gut tints (dark #283635 / #3a2a30) */
+[data-theme="light"] .aim-console .ac-r.ne .ac-gut {
+  background: #ccd5d2;
+}
+[data-theme="light"] .aim-console .ac-r.dead .ac-gut {
+  background: #dccfd4;
+}
+
+/* emphatic near-white text (dark #dfe9e6) → the dark cool-gray foreground */
+[data-theme="light"] .aim-console .ac-iought,
+[data-theme="light"] .aim-console .ac-body strong {
+  color: #273230;
+}
+
+/* drift "ought" line — light amber text on dark (#e9d3a4) → muted gold on light */
+[data-theme="light"] .aim-console .ac-r.dr .ac-ought {
+  color: #9a7327;
+}
+
+/* inspector crumb separator (dark faint #2c3a39) */
+[data-theme="light"] .aim-console .ac-icrumb .s {
+  color: #96a19c;
+}
+
+/* modal drop shadow (dark #000) → soft cool shadow on light */
+[data-theme="light"] .aim-console .ac-modal {
+  box-shadow: 0 24px 70px -22px rgba(39, 50, 48, 0.18);
+}
