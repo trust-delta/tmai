@@ -218,13 +218,21 @@ export function HandoffRitualOverlay({ unitName, ritualId, phases }: HandoffRitu
   };
 
   return (
+    // Scoped to the CONVERSATION PANEL (its `position: relative` host), NOT a
+    // full-window takeover: a handoff busies ONE unit's conversation, so it
+    // covers only that panel and leaves the unit tabs, the Aim worklist, and
+    // the Remote rail usable while the ritual runs. `aria-modal` stays false —
+    // this no longer traps the whole app. The backdrop is TRANSLUCENT (not the
+    // old opaque `bg-background`) so the operator can faintly see the ritual
+    // prompt being delivered to the Producer underneath — visible proof the
+    // handoff is actually in flight, not a frozen wall.
     <div
       role="dialog"
-      aria-modal="true"
+      aria-modal="false"
       aria-label={
         isRespawn ? "Producer crash-respawn in progress" : "Handoff and restart in progress"
       }
-      className="fixed inset-0 z-50 flex items-center justify-center bg-background backdrop-blur-sm"
+      className="absolute inset-0 z-20 flex items-center justify-center bg-background/60 backdrop-blur-[2px]"
     >
       <div className="w-full max-w-lg rounded-xl border border-hairline-strong bg-surface-strong p-5 shadow-2xl">
         <h3 className="text-sm font-semibold text-foreground">

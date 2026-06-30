@@ -472,6 +472,10 @@
 /* ── SESSION pane (faux tabs row + S3 stub) ───────────────────────────── */
 .aim-console .ac-session {
   background: var(--bg);
+  /* Positioned host for the in-progress handoff overlay (App's `handoffOverlay`,
+     `absolute inset-0`): a handoff covers only THIS conversation column, not the
+     whole console, so the unit tabs / Aim / Remote stay usable. */
+  position: relative;
 }
 .aim-console .ac-stabs {
   display: flex;

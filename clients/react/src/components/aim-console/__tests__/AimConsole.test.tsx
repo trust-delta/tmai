@@ -172,6 +172,18 @@ describe("AimConsole — S1 shell", () => {
     // metaUnit = units[0].name when activeUnitName is null.
     expect(screen.getByText(/unit tmai · opus-4\.8 · max/)).toBeTruthy();
   });
+
+  it("renders the handoff overlay INSIDE the Session column (scoped to the conversation)", () => {
+    // The in-progress handoff overlay is threaded in via `handoffOverlay` and
+    // must land inside the Session (conversation) column — so a handoff covers
+    // only that panel, not the whole console. Here a marker stands in for the
+    // real overlay; the assertion is structural (it sits within `.ac-session`).
+    renderConsole({
+      handoffOverlay: <div data-testid="handoff-overlay-marker">handoff</div>,
+    });
+    const marker = screen.getByTestId("handoff-overlay-marker");
+    expect(marker.closest(".ac-session")).not.toBeNull();
+  });
 });
 
 // The remote-Δ freshness instrument used to live ONLY in the producer-console R

@@ -18,6 +18,7 @@
 // is mocked so we can drive `state` deterministically.
 
 import { fireEvent, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSnapshot } from "@/lib/api";
 import { renderWithProviders } from "@/test/render";
@@ -100,10 +101,15 @@ vi.mock("@/components/terminal/TerminalList", () => ({ TerminalList: () => null 
 vi.mock("@/components/settings/SettingsPanel", () => ({ SettingsPanel: () => null }));
 vi.mock("@/components/calibration/CalibrationPanel", () => ({ CalibrationPanel: () => null }));
 // The aim console is the DEFAULT surface. Stub it so the aim-mode test below
-// observes whether the GLOBAL handoff overlay mounts alongside it, without
-// rendering the real 3-pane console (its own tests cover that).
+// observes whether the handoff overlay mounts alongside it, without rendering
+// the real 3-pane console (its own tests cover that). The in-progress overlay
+// is no longer an app-global fixed layer — it is threaded INTO the conversation
+// panel via `handoffOverlay`, so the stub must render that prop (the real
+// AimConsole places it inside its `.ac-session` column).
 vi.mock("@/components/aim-console/AimConsole", () => ({
-  AimConsole: () => <div data-testid="aim-console-stub">aim-console</div>,
+  AimConsole: ({ handoffOverlay }: { handoffOverlay?: ReactNode }) => (
+    <div data-testid="aim-console-stub">aim-console{handoffOverlay}</div>
+  ),
 }));
 vi.mock("@/components/project/ProducerLaunchPicker", () => ({
   ProducerLaunchPicker: () => null,
@@ -242,7 +248,7 @@ describe("App — handoff ritual wiring", () => {
     expect(screen.getByTestId("agent-actions-stub")).toBeTruthy();
   });
 
-  it("renders the in-progress overlay at App level — co-visible with the conversation view", () => {
+  it("renders the in-progress overlay in the conversation panel — co-visible with the conversation view", () => {
     useAgentsMock.mockReturnValue({
       agents: [agent({ id: "claude:prod" })],
       attentionCount: 0,
@@ -256,21 +262,50 @@ describe("App — handoff ritual wiring", () => {
 
     renderWithProviders(<App initialConsoleMode="producer" />);
 
-    // Overlay is present in the digest view …
+    // Overlay is present in the digest view (the conversation host wraps the
+    // digest) …
     expect(screen.getByTestId("phase-row-prompted")).toBeTruthy();
 
     // … and STILL present after switching to the Producer conversation —
     // the trap that forced manual-kill (overlay only in the digest) is gone.
+    // (It now scopes to the conversation PANEL instead of the whole app, but
+    // stays co-visible with whatever that panel shows.)
     fireEvent.click(screen.getByTitle("claude:prod"));
     expect(screen.getByTestId("preview-stub")).toBeTruthy();
     expect(screen.getByTestId("phase-row-prompted")).toBeTruthy();
   });
 
+  it("scopes the in-progress overlay to the FOCUSED unit (other units' conversations stay clear)", () => {
+    // The overlay is gated on `ritualState.unit === focused unit`: a handoff
+    // busies one unit's conversation, so focusing a DIFFERENT unit must show
+    // that unit's conversation cleanly (the ritual keeps running in the
+    // background and re-appears on switch-back). Here the focused unit resolves
+    // to "alpha" (the agent cwd basename), but the ritual is for "beta" — so no
+    // overlay renders over alpha's conversation.
+    useAgentsMock.mockReturnValue({
+      agents: [agent({ id: "claude:prod" })],
+      attentionCount: 0,
+      loading: false,
+      refresh: vi.fn(),
+    });
+    useHandoffRitualMock.mockReturnValue({
+      ...idleRitual(),
+      state: { kind: "in_progress", ritualId: "r-1", unit: "beta", phases: [] },
+    });
+
+    renderWithProviders(<App initialConsoleMode="producer" />);
+
+    // Focused unit is "alpha"; the ritual is for "beta" → no overlay here.
+    expect(screen.queryByTestId("phase-row-prompted")).toBeNull();
+  });
+
   it("renders the handoff overlay in the DEFAULT aim-console mode (regression #897)", () => {
-    // aim is DEFAULT_CONSOLE_MODE. Before the fix, App's aim-mode early return
-    // rendered only <AimConsole> and stranded the global handoff overlay in the
+    // aim is DEFAULT_CONSOLE_MODE. Before #897, App's aim-mode early return
+    // rendered only <AimConsole> and stranded the handoff overlay in the
     // producer-mode return below it, so a handoff triggered from the default
-    // surface showed nothing. The overlay must now mount in BOTH modes.
+    // surface showed nothing. The overlay must mount in BOTH modes — now
+    // threaded into the conversation panel via `handoffOverlay` (the real
+    // AimConsole places it in `.ac-session`; this stub renders the prop).
     useAgentsMock.mockReturnValue({
       agents: [agent({ id: "claude:prod" })],
       attentionCount: 0,
@@ -290,7 +325,7 @@ describe("App — handoff ritual wiring", () => {
 
     // The aim console is the default surface …
     expect(screen.getByTestId("aim-console-stub")).toBeTruthy();
-    // … and the global handoff overlay is co-visible with it.
+    // … and the handoff overlay is co-visible with it (via `handoffOverlay`).
     expect(screen.getByTestId("phase-row-prompted")).toBeTruthy();
   });
 });
