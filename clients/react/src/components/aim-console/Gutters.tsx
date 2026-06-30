@@ -217,6 +217,78 @@ export function ConvAimGutter({
   );
 }
 
+/** Overlay edge handle — the LEFT edge of the floating Remote overlay drawer.
+ *  Dragging it resizes the overlay width (`--pr`); on release AimConsole snaps
+ *  it to DOCK if it was pulled wide enough (the "drag-to-dock" gesture). Unlike
+ *  `AimRemoteGutter` (a grid track) this is absolutely positioned at the
+ *  drawer's left edge (`right: var(--pr)`), so it only exists while overlaid. */
+export function OverlayEdgeGutter({
+  prWidth,
+  onCommit,
+  onReset,
+  previewDock,
+}: {
+  prWidth: number;
+  onCommit: (pr: number) => void;
+  onReset: () => void;
+  previewDock: (pr: number) => boolean;
+}) {
+  const pr0Ref = useRef(0);
+  const valueRef = useRef<number | null>(null);
+  const rootRef = useRef<HTMLElement | null>(null);
+
+  const onStart = useCallback((gutter: HTMLElement) => {
+    const root = rootOf(gutter);
+    const drawer = root?.querySelector(".ac-prfull");
+    if (!root || !drawer) return false;
+    rootRef.current = root;
+    pr0Ref.current = drawer.getBoundingClientRect().width;
+    valueRef.current = null;
+    return true;
+  }, []);
+
+  const onMove = useCallback(
+    (gutter: HTMLElement, delta: number) => {
+      // Pointer left = wider overlay. On release the Aim-room guard decides the
+      // mode (docks if it still fits beside Aim, floats otherwise). From OVERLAY
+      // that is a FLIP when the current width would dock — surface it live.
+      const pr = clampAimConsolePrWidth(pr0Ref.current - delta);
+      valueRef.current = pr;
+      const root = rootOf(gutter);
+      root?.style.setProperty("--pr", `${pr}px`);
+      const willFlip = previewDock(pr);
+      root?.classList.toggle("remote-pending-flip", willFlip);
+      return willFlip ? `remote ${pr}px · release to dock` : `remote ${pr}px`;
+    },
+    [previewDock],
+  );
+
+  const onEnd = useCallback(() => {
+    rootRef.current?.classList.remove("remote-pending-flip");
+    if (valueRef.current !== null) onCommit(valueRef.current);
+  }, [onCommit]);
+
+  const { live, readout, handlers } = useGutterDrag({ axis: "x", onStart, onMove, onEnd, onReset });
+
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a div is the draggable splitter (RPanel precedent)
+    <div
+      className={cn("ac-ovgut", live && "live")}
+      role="separator"
+      tabIndex={0}
+      aria-orientation="vertical"
+      aria-label="Resize Remote overlay"
+      aria-valuenow={Math.round(prWidth)}
+      aria-valuemin={AIM_CONSOLE_PR_WIDTH_MIN}
+      aria-valuemax={AIM_CONSOLE_PR_WIDTH_MAX}
+      title="Drag to resize · docks when it fits beside Aim · double-click to reset"
+      {...handlers}
+    >
+      <ReadoutChip readout={readout} />
+    </div>
+  );
+}
+
 /** Gutter B — Aim|Remote. Adjusts `--pr` (px) while the Remote is DOCKED;
  *  inert (`off`) while collapsed or overlaid (the overlay drawer carries its
  *  own edge handle). `prWidth` (the committed Remote width) feeds
@@ -226,32 +298,45 @@ export function AimRemoteGutter({
   prWidth,
   onCommit,
   onReset,
+  previewDock,
 }: {
   active: boolean;
   prWidth: number;
   onCommit: (pr: number) => void;
   onReset: () => void;
+  previewDock: (pr: number) => boolean;
 }) {
   const pr0Ref = useRef(0);
   const valueRef = useRef<number | null>(null);
+  const rootRef = useRef<HTMLElement | null>(null);
 
   const onStart = useCallback((gutter: HTMLElement) => {
-    const prEl = rootOf(gutter)?.querySelector(".ac-pr");
-    if (!prEl) return false;
+    const root = rootOf(gutter);
+    const prEl = root?.querySelector(".ac-pr");
+    if (!root || !prEl) return false;
+    rootRef.current = root;
     pr0Ref.current = prEl.getBoundingClientRect().width;
     valueRef.current = null;
     return true;
   }, []);
 
-  const onMove = useCallback((gutter: HTMLElement, delta: number) => {
-    // The Remote grows leftwards: pointer left = wider panel.
-    const pr = clampAimConsolePrWidth(pr0Ref.current - delta);
-    valueRef.current = pr;
-    rootOf(gutter)?.style.setProperty("--pr", `${pr}px`);
-    return `remote ${pr}px`;
-  }, []);
+  const onMove = useCallback(
+    (gutter: HTMLElement, delta: number) => {
+      // The Remote grows leftwards: pointer left = wider panel. From DOCK,
+      // releasing FLIPS to overlay when the width no longer fits beside Aim.
+      const pr = clampAimConsolePrWidth(pr0Ref.current - delta);
+      valueRef.current = pr;
+      const root = rootOf(gutter);
+      root?.style.setProperty("--pr", `${pr}px`);
+      const willFlip = !previewDock(pr);
+      root?.classList.toggle("remote-pending-flip", willFlip);
+      return willFlip ? `remote ${pr}px · release to float` : `remote ${pr}px`;
+    },
+    [previewDock],
+  );
 
   const onEnd = useCallback(() => {
+    rootRef.current?.classList.remove("remote-pending-flip");
     if (valueRef.current !== null) onCommit(valueRef.current);
   }, [onCommit]);
 

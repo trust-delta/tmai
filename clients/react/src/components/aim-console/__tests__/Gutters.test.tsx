@@ -188,32 +188,132 @@ describe("AimRemoteGutter — Aim|Remote gutter (docked only)", () => {
     expect(sep.className).toContain("off");
   });
 
-  it("drags the docked Remote within 240–520px and persists on pointerup", () => {
+  // The dock GUARD boundary: maxDockable = console − conversation − gutters −
+  // DOCK_MIN_AIM (400). With console 1500 + conversation 700 → 1500-700-10-400 =
+  // 390px. So the Remote docks while ≤ 390 (Aim keeps its floor) and floats when
+  // wider (Aim would be crushed).
+  function stubDockGeometry(root: Element) {
+    stubRect(root.querySelector(".ac-main") as Element, { width: 1500 });
+    stubRect(root.querySelector(".ac-session") as Element, { width: 700 });
+  }
+
+  it("resizes the docked Remote while it still fits beside Aim (stays docked)", () => {
     renderConsole();
     const root = screen.getByTestId("aim-console");
     openAndDock();
-    // Open carries the persisted (default) width.
     expect(root.style.getPropertyValue("--pr")).toBe("360px");
+    expect(root.className).toContain("remote-dock");
+    stubDockGeometry(root);
 
     const sep = screen.getByRole("separator", { name: "Resize Remote panel" });
     expect(sep.className).not.toContain("off");
     stubRect(root.querySelector(".ac-pr") as Element, { width: 360 });
 
-    // Pointer left = wider panel: 360 - (-100) = 460.
-    drag(sep, { x: 1000, y: 300 }, { x: 900, y: 300 });
-    expect(root.style.getPropertyValue("--pr")).toBe("460px");
-    expect(storedLayout()).toEqual({ ...AIM_CONSOLE_LAYOUT_DEFAULTS, pr: 460 });
-
-    // Clamp floor (240) and ceiling (520).
-    drag(sep, { x: 1000, y: 300 }, { x: 1900, y: 300 });
-    expect(root.style.getPropertyValue("--pr")).toBe("240px");
-    drag(sep, { x: 1000, y: 300 }, { x: 0, y: 300 });
-    expect(root.style.getPropertyValue("--pr")).toBe("520px");
-    expect(storedLayout()).toEqual({ ...AIM_CONSOLE_LAYOUT_DEFAULTS, pr: 520 });
+    // Narrow to 380 (≤ 390 maxDockable) → still fits → stays docked, persists.
+    drag(sep, { x: 1000, y: 300 }, { x: 980, y: 300 });
+    expect(root.style.getPropertyValue("--pr")).toBe("380px");
+    expect(root.className).toContain("remote-dock");
+    expect(storedLayout()).toEqual({ ...AIM_CONSOLE_LAYOUT_DEFAULTS, pr: 380 });
 
     fireEvent.doubleClick(sep);
     expect(storedLayout()).toBeNull();
     expect(root.style.getPropertyValue("--pr")).toBe("360px");
+  });
+
+  it("widening a docked panel until Aim would be crushed floats it back to overlay", () => {
+    renderConsole();
+    const root = screen.getByTestId("aim-console");
+    openAndDock();
+    expect(root.className).toContain("remote-dock");
+    stubDockGeometry(root);
+    const sep = screen.getByRole("separator", { name: "Resize Remote panel" });
+    stubRect(root.querySelector(".ac-pr") as Element, { width: 360 });
+
+    // 360 - (-100) = 460 > 390 → Aim would drop below its floor → floats.
+    drag(sep, { x: 1000, y: 300 }, { x: 900, y: 300 });
+    expect(root.className).not.toContain("remote-dock");
+    expect(root.className).toContain("remote-open");
+  });
+});
+
+describe("OverlayEdgeGutter — drag the overlay edge (dock when it fits)", () => {
+  const NAME = "Resize Remote overlay";
+
+  // Same guard geometry as above: maxDockable 390px.
+  function stubDockGeometry(root: Element) {
+    stubRect(root.querySelector(".ac-main") as Element, { width: 1500 });
+    stubRect(root.querySelector(".ac-session") as Element, { width: 700 });
+    stubRect(root.querySelector(".ac-prfull") as Element, { width: 360 });
+  }
+
+  it("exists only while overlaid (open, not docked)", () => {
+    renderConsole();
+    expect(screen.queryByRole("separator", { name: NAME })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Expand PR / Issue rail" }));
+    expect(screen.getByRole("separator", { name: NAME })).toBeTruthy();
+  });
+
+  it("drag-to-dock: releasing at a width that fits beside Aim docks it", () => {
+    renderConsole();
+    const root = screen.getByTestId("aim-console");
+    fireEvent.click(screen.getByRole("button", { name: "Expand PR / Issue rail" }));
+    expect(root.className).toContain("remote-open");
+    expect(root.className).not.toContain("remote-dock");
+    stubDockGeometry(root);
+
+    const sep = screen.getByRole("separator", { name: NAME });
+    // 360 → 380 (≤ 390 maxDockable) → fits → docks on release.
+    drag(sep, { x: 1000, y: 300 }, { x: 980, y: 300 });
+    expect(root.style.getPropertyValue("--pr")).toBe("380px");
+    expect(root.className).toContain("remote-dock");
+    expect(storedLayout()).toEqual({ ...AIM_CONSOLE_LAYOUT_DEFAULTS, pr: 380 });
+  });
+
+  it("stays overlay when released too wide to fit beside Aim", () => {
+    renderConsole();
+    const root = screen.getByTestId("aim-console");
+    fireEvent.click(screen.getByRole("button", { name: "Expand PR / Issue rail" }));
+    stubDockGeometry(root);
+
+    const sep = screen.getByRole("separator", { name: NAME });
+    // 360 → 460 (> 390 maxDockable) → Aim would be crushed → stays overlay.
+    drag(sep, { x: 1000, y: 300 }, { x: 900, y: 300 });
+    expect(root.style.getPropertyValue("--pr")).toBe("460px");
+    expect(root.className).not.toContain("remote-dock");
+    expect(root.className).toContain("remote-open");
+  });
+
+  it("signals a pending FLIP mid-drag (amber class + 'release to dock' readout), cleared on release", () => {
+    renderConsole();
+    const root = screen.getByTestId("aim-console");
+    fireEvent.click(screen.getByRole("button", { name: "Expand PR / Issue rail" }));
+    stubDockGeometry(root);
+    const sep = screen.getByRole("separator", { name: NAME });
+
+    // Mid-drag to 380 (≤ 390 → would DOCK, a flip from overlay) — no release yet.
+    fireEvent.pointerDown(sep, { clientX: 1000, clientY: 300, pointerId: 1, button: 0 });
+    fireEvent.pointerMove(sep, { clientX: 980, clientY: 300, pointerId: 1 });
+    expect(root.className).toContain("remote-pending-flip");
+    expect(screen.getByTestId("ac-gutter-readout").textContent).toContain("release to dock");
+
+    // Release clears the flip signal.
+    fireEvent.pointerUp(sep, { clientX: 980, clientY: 300, pointerId: 1 });
+    expect(root.className).not.toContain("remote-pending-flip");
+  });
+
+  it("shows NO flip signal while the drag stays in the same mode", () => {
+    renderConsole();
+    const root = screen.getByTestId("aim-console");
+    fireEvent.click(screen.getByRole("button", { name: "Expand PR / Issue rail" }));
+    stubDockGeometry(root);
+    const sep = screen.getByRole("separator", { name: NAME });
+
+    // Mid-drag to 460 (> 390 → would stay OVERLAY, no flip).
+    fireEvent.pointerDown(sep, { clientX: 1000, clientY: 300, pointerId: 1, button: 0 });
+    fireEvent.pointerMove(sep, { clientX: 900, clientY: 300, pointerId: 1 });
+    expect(root.className).not.toContain("remote-pending-flip");
+    expect(screen.getByTestId("ac-gutter-readout").textContent).not.toContain("release");
+    fireEvent.pointerUp(sep, { clientX: 900, clientY: 300, pointerId: 1 });
   });
 });
 
