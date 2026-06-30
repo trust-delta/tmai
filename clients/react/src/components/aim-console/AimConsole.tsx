@@ -30,7 +30,7 @@
 // from the persisted `aimConsoleLayout` ui-pref, and drag end (not per-move)
 // writes it back.
 
-import { type CSSProperties, useCallback, useEffect, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { useConfirm } from "@/components/layout/ConfirmDialog";
 import { advanceCursor, effectiveCursor } from "@/components/producer-console/r-panel/remote-delta";
 import type { AgentSnapshot, SlotResponse, TriggerHandoffRitualRequest } from "@/lib/api";
@@ -44,7 +44,7 @@ import {
 import { useUIPref } from "@/lib/ui-prefs-provider";
 import { cn } from "@/lib/utils";
 import { AimPane } from "./AimPane";
-import { AimRemoteGutter, ConvAimGutter } from "./Gutters";
+import { AimRemoteGutter, ConvAimGutter, OverlayEdgeGutter } from "./Gutters";
 import { PrRail } from "./PrRail";
 import { SessionPane } from "./SessionPane";
 // Bundled dev-tool typography (offline-robust @fontsource, NOT a Google Fonts
@@ -63,6 +63,27 @@ import "@fontsource/inter-tight/600.css";
 import "@fontsource/noto-sans-jp/400.css";
 import "@fontsource/noto-sans-jp/500.css";
 import "@/styles/aim-console.css";
+
+// Drag-to-dock GUARD: dock only delivers its value (Aim + Remote both visible
+// AND usable) when the Aim pane keeps a usable width. So the dock/overlay
+// boundary is not a fixed --pr threshold but "does the Remote still leave Aim
+// at least this many px?" — window- and conversation-width adaptive. Pull the
+// Remote so wide that Aim would drop below this floor and it stays/floats to
+// OVERLAY instead of docking; keep it narrow enough and it docks. (Tunable by
+// feel.)
+const DOCK_MIN_AIM_PX = 400;
+// Two 5px pane gutters sit between Conversation | Aim | Remote when docked.
+const DOCK_GUTTERS_PX = 10;
+
+// The widest Remote (`--pr`) that can dock while leaving Aim ≥ DOCK_MIN_AIM_PX,
+// measured live off the grid. Below/at this width docking fits; above it, Aim
+// would be crushed, so the Remote stays an overlay.
+function maxDockablePr(main: HTMLElement | null): number {
+  if (main === null) return Number.POSITIVE_INFINITY;
+  const consoleW = main.getBoundingClientRect().width;
+  const convW = main.querySelector(".ac-session")?.getBoundingClientRect().width ?? 0;
+  return consoleW - convW - DOCK_GUTTERS_PX - DOCK_MIN_AIM_PX;
+}
 
 function repoBasename(path: string): string {
   return path.split("/").filter(Boolean).pop() ?? path;
@@ -172,7 +193,9 @@ export function AimConsole({
     if (!remoteOpen || remoteDocked) return;
     const onPointerDown = (e: PointerEvent) => {
       const target = e.target as Element | null;
-      if (target?.closest(".ac-prfull")) return;
+      // Inside the drawer, OR on its drag-to-dock edge handle (which lives just
+      // outside the drawer) — not an "outside" click, don't close.
+      if (target?.closest(".ac-prfull") || target?.closest(".ac-ovgut")) return;
       collapseRemote();
     };
     document.addEventListener("pointerdown", onPointerDown, true);
@@ -233,6 +256,26 @@ export function AimConsole({
     [storedLayout, setStoredLayout],
   );
 
+  // Drag-to-dock (GUARD): committing the Remote width also snaps the mode by the
+  // Aim-room guard — dock IF the released width still leaves Aim ≥ the usable
+  // floor, else float to overlay. So dragging the Remote to a width that fits
+  // beside Aim docks it; dragging it so wide (or on a window/conversation too
+  // narrow) that Aim would be crushed keeps/pops it to overlay. Decided on
+  // release (not per-move) so the overlay never re-positions mid-drag. The ⊟/⊞
+  // button is a manual override (it toggles directly, ignoring the guard).
+  const mainRef = useRef<HTMLDivElement>(null);
+  const commitRemoteWidth = useCallback(
+    (finalPr: number) => {
+      commitPr(finalPr);
+      setRemoteDocked(finalPr <= maxDockablePr(mainRef.current));
+    },
+    [commitPr],
+  );
+  // Live preview during a drag: "would this width dock?" — the gutters use it to
+  // signal (amber seam + "release to dock/float" readout) when releasing now
+  // would FLIP the mode, so the threshold is legible mid-drag.
+  const previewDock = useCallback((prPx: number) => prPx <= maxDockablePr(mainRef.current), []);
+
   return (
     <div
       className={cn(
@@ -285,7 +328,7 @@ export function AimConsole({
           opening / docking the Remote only ever moves the Aim pane; the
           conversation never shifts. `.ac-main` is the positioned ancestor the
           overlay drawer floats over (see aim-console.css). */}
-      <div className="ac-main">
+      <div className="ac-main" ref={mainRef}>
         {/* CONVERSATION — the anchor (tabs + shead + term + S4 bash footer) */}
         <section className="ac-col ac-session" aria-label="Session">
           <SessionPane
@@ -306,13 +349,14 @@ export function AimConsole({
           <AimPane unitName={activeUnitName} />
         </section>
 
-        {/* gutter B — Aim|Remote (only active while the Remote is DOCKED;
-            inert as a 0px collapsed/overlay track) */}
+        {/* gutter B — Aim|Remote (active while DOCKED; resizing narrower than
+            the undock threshold floats it back to overlay on release) */}
         <AimRemoteGutter
           active={remoteOpen && remoteDocked}
           prWidth={pr}
-          onCommit={commitPr}
+          onCommit={commitRemoteWidth}
           onReset={resetPr}
+          previewDock={previewDock}
         />
 
         {/* REMOTE — collapsed rail ⇄ overlay drawer ⇄ docked column. The
@@ -331,6 +375,17 @@ export function AimConsole({
             issuesCursor={issuesCursor}
           />
         </section>
+
+        {/* Overlay edge handle — drag the floating drawer's left edge to resize;
+            pulled wider than the dock threshold, it snaps to DOCK on release. */}
+        {remoteOpen && !remoteDocked && (
+          <OverlayEdgeGutter
+            prWidth={pr}
+            onCommit={commitRemoteWidth}
+            onReset={resetPr}
+            previewDock={previewDock}
+          />
+        )}
       </div>
     </div>
   );

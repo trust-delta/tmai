@@ -371,6 +371,27 @@
   padding: 2px 7px;
 }
 
+/* Pending mode FLIP during a drag-to-dock: when releasing NOW would toggle
+   dock⇄overlay, the live seam + the readout chip turn amber (the "heads up,
+   you're crossing the line" accent) so the threshold is legible mid-drag. The
+   actual flip still happens only on release. */
+.aim-console.remote-pending-flip .ac-readout {
+  color: var(--amber);
+  border-color: var(--amber);
+}
+/* `.live` on both selectors keeps the specificity (0,4,1) above the cyan
+   `.ac-ovgut.live::before` / `.ac-vgut.live::before` rules regardless of source
+   order — the seam is always `.live` mid-drag, so this targets the active one. */
+.aim-console.remote-pending-flip .ac-ovgut.live::before,
+.aim-console.remote-pending-flip .ac-vgut.live::before {
+  background: var(--amber);
+  box-shadow: 0 0 8px rgba(207, 155, 70, 0.6);
+}
+.aim-console.remote-pending-flip .ac-ovgut.live::after,
+.aim-console.remote-pending-flip .ac-vgut.live::after {
+  color: var(--amber);
+}
+
 /* live-drag state (mock `body.dragging`, scoped on the root): suppress text
    selection, force the resize cursor window-wide, and disable the grid /
    footer height transitions so the tracks follow the pointer 1:1. */
@@ -1108,6 +1129,52 @@
   width: auto;
   box-shadow: none;
 }
+/* Overlay edge handle (drag-to-dock) — absolutely positioned at the floating
+   drawer's LEFT edge (`right: var(--pr)`), spanning the console height. Invisible
+   at rest; hover/drag lights the cyan seam + grip, same affordance language as
+   the grid gutters. Sits above the drawer so it stays grabbable. */
+.aim-console .ac-ovgut {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: var(--pr, 360px);
+  width: 11px;
+  transform: translateX(50%);
+  z-index: 6;
+  cursor: col-resize;
+}
+.aim-console .ac-ovgut::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: transparent;
+  transition:
+    background 0.15s,
+    box-shadow 0.15s;
+}
+.aim-console .ac-ovgut:hover::before,
+.aim-console .ac-ovgut.live::before {
+  background: var(--cyan);
+  box-shadow: 0 0 7px rgba(74, 163, 157, 0.55);
+}
+.aim-console .ac-ovgut::after {
+  content: "⋮";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: transparent;
+  transition: color 0.15s;
+}
+.aim-console .ac-ovgut:hover::after {
+  color: var(--cyan);
+}
 .aim-console .ac-prh {
   display: flex;
   align-items: center;
@@ -1132,6 +1199,12 @@
 }
 .aim-console .ac-prh .ac-prdock.on {
   color: var(--cyan);
+}
+/* Pending mode FLIP during a drag: the dock toggle icon (⊟/⊞) also goes amber —
+   it IS the mode that's about to change. Placed after `.ac-prdock.on` so it
+   wins for a docked (.on) toggle too (same specificity, later in source). */
+.aim-console.remote-pending-flip .ac-prh .ac-prdock {
+  color: var(--amber);
 }
 .aim-console .ac-prh .ac-prh-title {
   flex: 1;
