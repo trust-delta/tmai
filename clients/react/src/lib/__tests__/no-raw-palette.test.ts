@@ -18,11 +18,19 @@
 //     holds colour *values* (hex/oklch), never Tailwind palette classes.
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const SRC = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+
+// `relative()` yields the host separator (`\` on Windows), so normalize to
+// forward slashes before comparing against EXCLUDED / building messages —
+// otherwise the `lib/theme.ts` exclusion silently misses on Windows (`rel`
+// is `lib\theme.ts`), the SoT file gets scanned, and its comments that
+// *mention* palette classes (`bg-white/N`, `text-purple-400`) trip the
+// regex as false positives. POSIX runs (CI) are unaffected.
+const relPosix = (p: string): string => relative(SRC, p).split(sep).join("/");
 
 // Paths (relative to src/) excluded from the scan.
 const EXCLUDED = new Set(["types/generated", "lib/theme.ts"]);
@@ -42,7 +50,7 @@ const RAW_PALETTE = new RegExp(
 function* walk(dir: string): Generator<string> {
   for (const entry of readdirSync(dir)) {
     const p = join(dir, entry);
-    const rel = relative(SRC, p);
+    const rel = relPosix(p);
     if (EXCLUDED.has(rel)) continue;
     if (statSync(p).isDirectory()) {
       if (entry === "__tests__") continue;
@@ -69,7 +77,7 @@ describe("semantic-token migration — repo-wide lock", () => {
       text.split("\n").forEach((line, i) => {
         const hits = line.match(RAW_PALETTE);
         if (hits) {
-          violations.push(`${relative(SRC, file)}:${i + 1}  ${[...new Set(hits)].join(" ")}`);
+          violations.push(`${relPosix(file)}:${i + 1}  ${[...new Set(hits)].join(" ")}`);
         }
       });
     }
@@ -88,7 +96,7 @@ describe("semantic-token migration — repo-wide lock", () => {
       for (const m of text.matchAll(IDENTICAL_TERNARY)) {
         if (m[1] === m[2]) {
           const ln = text.slice(0, m.index).split("\n").length;
-          violations.push(`${relative(SRC, file)}:${ln}  ${m[1]}`);
+          violations.push(`${relPosix(file)}:${ln}  ${m[1]}`);
         }
       }
     }
