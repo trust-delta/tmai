@@ -12,7 +12,12 @@ import { type ReactElement, StrictMode, useCallback, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AimFace } from "@/components/aim-console/AimPane";
 import { setAimsDirectory } from "@/lib/api-files";
-import { applyThemeToDocument, resolveTheme } from "@/lib/theme";
+import {
+  applyThemeToDocument,
+  resolveTheme,
+  resolveThemeMode,
+  systemPrefersLight,
+} from "@/lib/theme";
 import { loadUIPrefs } from "@/lib/ui-prefs";
 import { UIPrefsProvider } from "@/lib/ui-prefs-provider";
 import "@fontsource/ibm-plex-mono/400.css";
@@ -90,7 +95,7 @@ function AimOffline(): ReactElement {
   );
 }
 
-applyThemeToDocument(resolveTheme(loadUIPrefs().theme));
+applyThemeToDocument(resolveTheme(resolveThemeMode(loadUIPrefs().themeMode, systemPrefersLight())));
 
 const rootEl = document.getElementById("root");
 if (rootEl === null) {

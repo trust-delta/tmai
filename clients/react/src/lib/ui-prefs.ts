@@ -8,7 +8,7 @@
 // `tmai:ui:prefs` localStorage key so cross-tab sync (storage events)
 // fires once per change instead of once per field.
 
-import { DEFAULT_THEME_NAME, THEME_NAMES, type ThemeName } from "@/lib/theme";
+import { DEFAULT_THEME_MODE, THEME_MODES, type ThemeMode } from "@/lib/theme";
 
 // Which mode the Aim panel (◎ Aims, Stage B convergence) opens in. `frontier`
 // = the owed worklist (default — the load-bearing thesis: the panel is a WRITE
@@ -59,9 +59,12 @@ export interface RemoteDeltaCursor {
 }
 
 export interface UIPrefs {
-  // WebUI colour theme. Presentation-only; lives here (not in tmai-core
-  // config / api-spec) by the same convention as every other field.
-  theme: ThemeName;
+  // WebUI colour-theme MODE — the System / Light / Dark intent the operator
+  // picks (resolved to a concrete theme at apply time via resolveThemeMode +
+  // the OS prefers-color-scheme). Presentation-only; lives here (not in
+  // tmai-core config / api-spec) by the same convention as every other field.
+  // Provisional store: a later core config field may pick this up.
+  themeMode: ThemeMode;
   // xterm font size (px). Presentation-only, browser-side; replaces the
   // old hardcoded `fontSize: 13` in useTerminal.
   terminalFontSize: number;
@@ -128,7 +131,7 @@ export const AIM_CONSOLE_LAYOUT_DEFAULTS: AimConsoleLayout = {
 };
 
 export const DEFAULT_UI_PREFS: UIPrefs = {
-  theme: DEFAULT_THEME_NAME,
+  themeMode: DEFAULT_THEME_MODE,
   terminalFontSize: 13,
   attentionStripCollapsed: false,
   attentionStripWidth: ATTENTION_STRIP_WIDTH_DEFAULT,
@@ -141,7 +144,7 @@ export const DEFAULT_UI_PREFS: UIPrefs = {
 
 export const UI_PREFS_STORAGE_KEY = "tmai:ui:prefs";
 
-const VALID_THEMES: readonly ThemeName[] = THEME_NAMES;
+const VALID_THEME_MODES: readonly ThemeMode[] = THEME_MODES;
 
 // Keep the terminal legible and the layout sane at the extremes.
 export const TERMINAL_FONT_SIZE_MIN = 8;
@@ -265,9 +268,9 @@ function coercePrefs(raw: unknown): UIPrefs {
   if (raw === null || typeof raw !== "object") return { ...DEFAULT_UI_PREFS };
   const r = raw as Record<string, unknown>;
   return {
-    theme: VALID_THEMES.includes(r.theme as ThemeName)
-      ? (r.theme as ThemeName)
-      : DEFAULT_UI_PREFS.theme,
+    themeMode: VALID_THEME_MODES.includes(r.themeMode as ThemeMode)
+      ? (r.themeMode as ThemeMode)
+      : DEFAULT_UI_PREFS.themeMode,
     terminalFontSize: clampFontSize(r.terminalFontSize, DEFAULT_UI_PREFS.terminalFontSize),
     attentionStripCollapsed:
       typeof r.attentionStripCollapsed === "boolean"

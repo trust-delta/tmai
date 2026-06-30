@@ -2,9 +2,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   applyThemeToDocument,
+  DEFAULT_THEME_MODE,
   DEFAULT_THEME_NAME,
   resolveTheme,
+  resolveThemeMode,
   SEMANTIC_TOKENS,
+  systemPrefersLight,
+  THEME_MODE_OPTIONS,
+  THEME_MODES,
   THEME_NAMES,
   THEMES,
   themeCssVars,
@@ -37,6 +42,70 @@ describe("theme registry", () => {
     // migrating onto semantic tokens (Settings switcher + ui-prefs
     // validation both key off THEME_NAMES).
     expect(THEME_NAMES as readonly string[]).toEqual(["tokyonight", "zinc", "light"]);
+  });
+});
+
+describe("theme MODE (System / Light / Dark)", () => {
+  it("offers exactly the three user-facing modes, default system", () => {
+    expect(THEME_MODES as readonly string[]).toEqual(["system", "light", "dark"]);
+    expect(DEFAULT_THEME_MODE).toBe("system");
+  });
+
+  it("pins light → light and dark → the current dark set (tokyonight), OS-agnostic", () => {
+    // Pinned modes ignore the OS signal entirely.
+    expect(resolveThemeMode("light", false)).toBe("light");
+    expect(resolveThemeMode("light", true)).toBe("light");
+    expect(resolveThemeMode("dark", false)).toBe("tokyonight");
+    expect(resolveThemeMode("dark", true)).toBe("tokyonight");
+  });
+
+  it("follows the OS signal under `system`", () => {
+    expect(resolveThemeMode("system", true)).toBe("light");
+    expect(resolveThemeMode("system", false)).toBe("tokyonight");
+  });
+
+  it("maps each picker option to the theme its swatch previews", () => {
+    const byMode = Object.fromEntries(THEME_MODE_OPTIONS.map((o) => [o.mode, o]));
+    expect(byMode.system.swatch).toBeNull(); // split swatch, no single colour
+    expect(byMode.light.swatch).toBe("light");
+    expect(byMode.dark.swatch).toBe("tokyonight");
+    expect(THEME_MODE_OPTIONS.map((o) => o.label)).toEqual(["System", "Light", "Dark"]);
+  });
+});
+
+describe("systemPrefersLight — OS prefers-color-scheme read", () => {
+  const realMatchMedia = window.matchMedia;
+  beforeEach(() => {
+    window.matchMedia = realMatchMedia;
+  });
+
+  function stubMatchMedia(lightMatches: boolean): void {
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes("light") ? lightMatches : false,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      onchange: null,
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+  }
+
+  it("reports the OS light preference when matchMedia matches", () => {
+    stubMatchMedia(true);
+    expect(systemPrefersLight()).toBe(true);
+  });
+
+  it("reports dark (false) when the OS prefers dark", () => {
+    stubMatchMedia(false);
+    expect(systemPrefersLight()).toBe(false);
+  });
+
+  it("falls back to dark (false) when matchMedia is unavailable", () => {
+    // Some environments (older jsdom, SSR) lack matchMedia — must not throw.
+    (window as { matchMedia?: unknown }).matchMedia = undefined;
+    expect(systemPrefersLight()).toBe(false);
   });
 });
 

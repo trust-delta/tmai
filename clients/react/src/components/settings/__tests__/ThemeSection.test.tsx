@@ -5,40 +5,53 @@ import { UI_PREFS_STORAGE_KEY } from "@/lib/ui-prefs";
 import { renderWithProviders } from "@/test/render";
 import { ThemeSection } from "../ThemeSection";
 
-describe("ThemeSection", () => {
+function storedMode(): string | undefined {
+  return JSON.parse(localStorage.getItem(UI_PREFS_STORAGE_KEY) ?? "{}").themeMode;
+}
+
+describe("ThemeSection — System / Light / Dark mode picker", () => {
   beforeEach(() => {
     localStorage.clear();
   });
 
-  it("shows Tokyo Night selected by default, with Zinc and the Day theme available", () => {
+  it("offers exactly System / Light / Dark, with System selected by default", () => {
     renderWithProviders(<ThemeSection />);
-    // Exact-anchored so it doesn't also match "Tokyo Night Day".
-    expect(screen.getByRole("button", { name: /^Tokyo Night$/ }).getAttribute("aria-pressed")).toBe(
+    expect(screen.getByRole("button", { name: /System/ }).getAttribute("aria-pressed")).toBe(
       "true",
     );
-    expect(screen.getByRole("button", { name: /Zinc/ }).getAttribute("aria-pressed")).toBe("false");
-    expect(
-      screen.getByRole("button", { name: /Tokyo Night Day/ }).getAttribute("aria-pressed"),
-    ).toBe("false");
+    expect(screen.getByRole("button", { name: /^Light$/ }).getAttribute("aria-pressed")).toBe(
+      "false",
+    );
+    expect(screen.getByRole("button", { name: /^Dark$/ }).getAttribute("aria-pressed")).toBe(
+      "false",
+    );
   });
 
-  it("persists a Zinc selection to the ui-prefs blob and reflects it", () => {
+  it("persists a Dark selection to the ui-prefs blob and reflects it", () => {
     renderWithProviders(<ThemeSection />);
-
-    fireEvent.click(screen.getByRole("button", { name: /Zinc/ }));
-
-    expect(screen.getByRole("button", { name: /Zinc/ }).getAttribute("aria-pressed")).toBe("true");
-    expect(JSON.parse(localStorage.getItem(UI_PREFS_STORAGE_KEY) ?? "{}").theme).toBe("zinc");
+    fireEvent.click(screen.getByRole("button", { name: /^Dark$/ }));
+    expect(screen.getByRole("button", { name: /^Dark$/ }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(storedMode()).toBe("dark");
   });
 
-  it("the migration landed: the light theme is selectable and persists", () => {
+  it("persists a Light selection", () => {
     renderWithProviders(<ThemeSection />);
+    fireEvent.click(screen.getByRole("button", { name: /^Light$/ }));
+    expect(screen.getByRole("button", { name: /^Light$/ }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(storedMode()).toBe("light");
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: /Tokyo Night Day/ }));
-
-    expect(
-      screen.getByRole("button", { name: /Tokyo Night Day/ }).getAttribute("aria-pressed"),
-    ).toBe("true");
-    expect(JSON.parse(localStorage.getItem(UI_PREFS_STORAGE_KEY) ?? "{}").theme).toBe("light");
+  it("can return to System (follow the OS)", () => {
+    renderWithProviders(<ThemeSection />);
+    fireEvent.click(screen.getByRole("button", { name: /^Dark$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /System/ }));
+    expect(screen.getByRole("button", { name: /System/ }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(storedMode()).toBe("system");
   });
 });
