@@ -5,18 +5,35 @@
 // vars onto <html> so the whole UI re-skins live (no reload) whenever the
 // pref changes — it is mounted once near the App root.
 
-import { useEffect } from "react";
-import { applyThemeToDocument, resolveTheme, type Theme } from "@/lib/theme";
+import { useEffect, useSyncExternalStore } from "react";
+import {
+  applyThemeToDocument,
+  resolveTheme,
+  resolveThemeMode,
+  subscribeSystemPrefersLight,
+  systemPrefersLight,
+  type Theme,
+} from "@/lib/theme";
 import { loadUIPrefs } from "@/lib/ui-prefs";
 import { useUIPrefsOptional } from "@/lib/ui-prefs-provider";
 
+// The OS `prefers-color-scheme` as live React state. When the mode is
+// `system`, an OS appearance flip re-renders consumers (and re-applies the
+// theme) with no reload. `getServerSnapshot` returns false (dark) for any
+// non-browser render.
+export function useSystemPrefersLight(): boolean {
+  return useSyncExternalStore(subscribeSystemPrefersLight, systemPrefersLight, () => false);
+}
+
 export function useActiveTheme(): Theme {
-  // When a provider is present (the real app) this is reactive: changing
-  // the `theme` pref re-renders consumers. Without one (isolated terminal
-  // unit tests) fall back to the persisted / default value.
+  // When a provider is present (the real app) this is reactive: changing the
+  // `themeMode` pref re-renders consumers. Without one (isolated terminal unit
+  // tests) fall back to the persisted / default value. The mode resolves to a
+  // concrete theme via the OS signal when `system`.
   const ctx = useUIPrefsOptional();
-  const name = ctx ? ctx.prefs.theme : loadUIPrefs().theme;
-  return resolveTheme(name);
+  const mode = ctx ? ctx.prefs.themeMode : loadUIPrefs().themeMode;
+  const prefersLight = useSystemPrefersLight();
+  return resolveTheme(resolveThemeMode(mode, prefersLight));
 }
 
 export function useApplyTheme(): Theme {

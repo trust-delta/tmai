@@ -65,7 +65,7 @@ globalThis.ResizeObserver = function ResizeObserver() {
   return { observe: vi.fn(), disconnect: vi.fn(), unobserve: vi.fn() };
 } as unknown as typeof ResizeObserver;
 
-import { THEMES, toXtermTheme } from "@/lib/theme";
+import { THEMES, themeCssVars, toXtermTheme } from "@/lib/theme";
 import { UIPrefsProvider, useUIPref } from "@/lib/ui-prefs-provider";
 import { useApplyTheme } from "../useActiveTheme";
 import { useTerminal } from "../useTerminal";
@@ -74,13 +74,13 @@ function Harness() {
   const containerRef = useRef<HTMLDivElement>(null);
   useApplyTheme(); // CSS-var surface (rest of the UI)
   useTerminal({ agentId: "claude:x", containerRef }); // terminal surface
-  const [, setTheme] = useUIPref("theme");
+  const [, setMode] = useUIPref("themeMode");
   const [, setFont] = useUIPref("terminalFontSize");
   return (
     <div>
       <div ref={containerRef} />
-      <button type="button" onClick={() => setTheme("zinc")}>
-        to-zinc
+      <button type="button" onClick={() => setMode("light")}>
+        to-light
       </button>
       <button type="button" onClick={() => setFont(20)}>
         font-20
@@ -120,22 +120,22 @@ describe("theme drives both surfaces (single source)", () => {
     expect(document.documentElement.dataset.theme).toBe("tokyonight");
   });
 
-  it("switching the theme pref live-updates both surfaces", () => {
+  it("switching the theme mode live-updates both surfaces", () => {
     render(
       <UIPrefsProvider>
         <Harness />
       </UIPrefsProvider>,
     );
 
-    fireEvent.click(screen.getByText("to-zinc"));
+    fireEvent.click(screen.getByText("to-light"));
 
-    // Terminal surface rebuilt with the zinc ITheme (no ANSI overrides).
-    expect(lastTheme()).toEqual(toXtermTheme(THEMES.zinc));
-    // Rest-of-UI surface flipped to zinc's verbatim OKLch tokens.
+    // Terminal surface rebuilt with the light (Tokyo Night Day) ITheme.
+    expect(lastTheme()).toEqual(toXtermTheme(THEMES.light));
+    // Rest-of-UI surface flipped to the light theme's tokens.
     expect(document.documentElement.style.getPropertyValue("--color-background")).toBe(
-      "oklch(0.145 0 0)",
+      themeCssVars(THEMES.light)["--color-background"],
     );
-    expect(document.documentElement.dataset.theme).toBe("zinc");
+    expect(document.documentElement.dataset.theme).toBe("light");
   });
 
   it("uses the ui-prefs terminal font size and updates it live without a rebuild", () => {

@@ -17,23 +17,23 @@ describe("ui-prefs", () => {
     expect(loadUIPrefs()).toEqual(DEFAULT_UI_PREFS);
   });
 
-  it("defaults the theme to tokyonight (matches the operator's tmux)", () => {
-    expect(loadUIPrefs().theme).toBe("tokyonight");
+  it("defaults the theme mode to system (follow the OS appearance)", () => {
+    expect(loadUIPrefs().themeMode).toBe("system");
   });
 
-  it("round-trips a theme selection through localStorage", () => {
-    saveUIPrefs({ ...DEFAULT_UI_PREFS, theme: "zinc" });
+  it("round-trips a theme-mode selection through localStorage", () => {
+    saveUIPrefs({ ...DEFAULT_UI_PREFS, themeMode: "light" });
     // Persisted to the consolidated blob, not a side key.
-    expect(JSON.parse(localStorage.getItem(UI_PREFS_STORAGE_KEY) ?? "{}").theme).toBe("zinc");
-    expect(loadUIPrefs().theme).toBe("zinc");
+    expect(JSON.parse(localStorage.getItem(UI_PREFS_STORAGE_KEY) ?? "{}").themeMode).toBe("light");
+    expect(loadUIPrefs().themeMode).toBe("light");
   });
 
-  it("falls back to the default theme for an unknown theme value", () => {
+  it("falls back to the default mode for an unknown theme-mode value", () => {
     localStorage.setItem(
       UI_PREFS_STORAGE_KEY,
-      JSON.stringify({ ...DEFAULT_UI_PREFS, theme: "midnight" }),
+      JSON.stringify({ ...DEFAULT_UI_PREFS, themeMode: "midnight" }),
     );
-    expect(loadUIPrefs().theme).toBe(DEFAULT_UI_PREFS.theme);
+    expect(loadUIPrefs().themeMode).toBe(DEFAULT_UI_PREFS.themeMode);
   });
 
   it("defaults the terminal font size to 13 and round-trips a change", () => {
@@ -100,7 +100,7 @@ describe("ui-prefs", () => {
   it("round-trips a saved blob", () => {
     const next: UIPrefs = {
       ...DEFAULT_UI_PREFS,
-      theme: "zinc",
+      themeMode: "dark",
       terminalFontSize: 18,
       attentionStripWidth: 440,
       attentionStripCollapsed: true,
@@ -109,13 +109,13 @@ describe("ui-prefs", () => {
     expect(loadUIPrefs()).toEqual(next);
   });
 
-  it("falls back to defaults for an invalid theme without nuking siblings", () => {
+  it("falls back to defaults for an invalid theme mode without nuking siblings", () => {
     localStorage.setItem(
       UI_PREFS_STORAGE_KEY,
-      JSON.stringify({ theme: "garbage", terminalFontSize: 18, attentionStripWidth: 440 }),
+      JSON.stringify({ themeMode: "garbage", terminalFontSize: 18, attentionStripWidth: 440 }),
     );
     const loaded = loadUIPrefs();
-    expect(loaded.theme).toBe(DEFAULT_UI_PREFS.theme);
+    expect(loaded.themeMode).toBe(DEFAULT_UI_PREFS.themeMode);
     expect(loaded.terminalFontSize).toBe(18);
     expect(loaded.attentionStripWidth).toBe(440);
   });
@@ -187,10 +187,10 @@ describe("ui-prefs", () => {
   });
 
   it("does not sweep legacy keys when a consolidated blob already exists", () => {
-    saveUIPrefs({ ...DEFAULT_UI_PREFS, theme: "zinc" });
+    saveUIPrefs({ ...DEFAULT_UI_PREFS, themeMode: "dark" });
     localStorage.setItem("tmai:split-ratio", "0.7");
     const loaded = loadUIPrefs();
-    expect(loaded.theme).toBe("zinc");
+    expect(loaded.themeMode).toBe("dark");
     // Legacy key is left in place since the sweep only fires when the new blob is absent.
     expect(localStorage.getItem("tmai:split-ratio")).toBe("0.7");
   });

@@ -38,6 +38,70 @@ export type ThemeName = (typeof THEME_NAMES)[number];
 // tmux out of the box.
 export const DEFAULT_THEME_NAME: ThemeName = "tokyonight";
 
+// ── theme MODE (the user-facing System / Light / Dark choice) ──────────────
+// The settings switcher stores a *mode*, not a resolved theme name: the
+// operator picks intent — follow the OS, or pin light / dark — and the app
+// resolves it to a concrete `ThemeName` at apply time. "dark" is the current
+// dark colour set (Tokyo Night); "light" is Tokyo Night Day; "system" follows
+// the OS `prefers-color-scheme`. (`zinc` stays in the registry + `resolveTheme`
+// for anyone who has it persisted, but is no longer offered in the picker.)
+//
+// Stored in the ui-prefs localStorage blob (provisional — a later tmai-core
+// config field may pick it up; until then it is purely browser-side, like
+// every other ui-pref).
+export const THEME_MODES = ["system", "light", "dark"] as const;
+export type ThemeMode = (typeof THEME_MODES)[number];
+
+// New installs follow the OS appearance out of the box.
+export const DEFAULT_THEME_MODE: ThemeMode = "system";
+
+// The concrete themes a mode resolves to.
+const DARK_THEME_NAME: ThemeName = "tokyonight";
+const LIGHT_THEME_NAME: ThemeName = "light";
+
+// Per-mode descriptor for the settings picker, so the mode→theme mapping lives
+// in ONE place (this module) instead of being re-derived in the UI. `swatch`
+// is the theme whose colours preview the mode; `null` (system) renders a
+// split dark/light swatch since it has no single colour.
+export interface ThemeModeOption {
+  mode: ThemeMode;
+  label: string;
+  swatch: ThemeName | null;
+}
+export const THEME_MODE_OPTIONS: readonly ThemeModeOption[] = [
+  { mode: "system", label: "System", swatch: null },
+  { mode: "light", label: "Light", swatch: LIGHT_THEME_NAME },
+  { mode: "dark", label: "Dark", swatch: DARK_THEME_NAME },
+];
+
+// Resolve a mode to a concrete theme name. `prefersLight` is the OS signal,
+// passed IN (not read here) so this stays pure + SSR/test-safe — the caller
+// owns the matchMedia read via `systemPrefersLight()` /
+// `useSystemPrefersLight()`.
+export function resolveThemeMode(mode: ThemeMode, prefersLight: boolean): ThemeName {
+  if (mode === "light") return LIGHT_THEME_NAME;
+  if (mode === "dark") return DARK_THEME_NAME;
+  return prefersLight ? LIGHT_THEME_NAME : DARK_THEME_NAME;
+}
+
+// The OS appearance, read once. Guarded for non-browser / matchMedia-less
+// environments (returns false ⇒ dark, matching the dark default). The query
+// is `light` so any absence falls back to dark.
+export function systemPrefersLight(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  return window.matchMedia("(prefers-color-scheme: light)").matches;
+}
+
+// Subscribe to OS appearance changes (shaped for `useSyncExternalStore`).
+// No-op when matchMedia is unavailable. Uses the same `addEventListener`
+// pattern as `useResponsiveLayout`.
+export function subscribeSystemPrefersLight(onChange: () => void): () => void {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return () => {};
+  const mql = window.matchMedia("(prefers-color-scheme: light)");
+  mql.addEventListener("change", onChange);
+  return () => mql.removeEventListener("change", onChange);
+}
+
 // The Tailwind semantic tokens, as their `--color-<name>` custom-property
 // suffix. Iterated by `themeCssVars` so the css-var emission and the
 // `Theme` shape can never fall out of sync.
