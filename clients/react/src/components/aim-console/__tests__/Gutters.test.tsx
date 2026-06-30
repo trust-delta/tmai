@@ -112,92 +112,97 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("AimSessionGutter — Aim|Session pane gutter", () => {
+describe("ConvAimGutter — Conversation|Aim pane gutter", () => {
   function setup() {
     renderConsole();
     const root = screen.getByTestId("aim-console");
-    stubRect(root.querySelector(".ac-aim") as Element, { width: 590 });
-    stubRect(root.querySelector(".ac-session") as Element, { width: 500 });
-    const sep = screen.getByRole("separator", { name: "Resize Aim / Session panes" });
+    stubRect(root.querySelector(".ac-session") as Element, { width: 700 });
+    const sep = screen.getByRole("separator", { name: "Resize Conversation / Aim panes" });
     return { root, sep };
   }
 
-  it("rewrites --aim/--sess per move and persists ONCE on pointerup", () => {
+  it("rewrites --conv per move and persists ONCE on pointerup", () => {
     const { root, sep } = setup();
-    fireEvent.pointerDown(sep, { clientX: 600, clientY: 300, pointerId: 1, button: 0 });
-    fireEvent.pointerMove(sep, { clientX: 650, clientY: 300, pointerId: 1 });
+    fireEvent.pointerDown(sep, { clientX: 700, clientY: 300, pointerId: 1, button: 0 });
+    fireEvent.pointerMove(sep, { clientX: 760, clientY: 300, pointerId: 1 });
 
-    // Live: the fr tracks follow the pointer (590+50 / 500-50 of total 1090)…
-    expect(root.style.getPropertyValue("--aim")).toBe("640fr");
-    expect(root.style.getPropertyValue("--sess")).toBe("450fr");
+    // Live: the conversation anchor widens with the pointer (700 + 60)…
+    expect(root.style.getPropertyValue("--conv")).toBe("760px");
     // …with the mono readout chip showing the live px…
-    expect(screen.getByTestId("ac-gutter-readout").textContent).toBe("aim 640px · sess 450px");
+    expect(screen.getByTestId("ac-gutter-readout").textContent).toBe("conv 760px");
     // …but NOTHING persisted yet (written on drag end, not per-move).
     expect(storedLayout()).toBeNull();
 
-    fireEvent.pointerUp(sep, { clientX: 650, clientY: 300, pointerId: 1 });
-    expect(storedLayout()).toEqual({ ...AIM_CONSOLE_LAYOUT_DEFAULTS, aim: 640, sess: 450 });
-    // The chip is gone once the drag ends.
+    fireEvent.pointerUp(sep, { clientX: 760, clientY: 300, pointerId: 1 });
+    expect(storedLayout()).toEqual({ ...AIM_CONSOLE_LAYOUT_DEFAULTS, conv: 760 });
     expect(screen.queryByTestId("ac-gutter-readout")).toBeNull();
   });
 
-  it("clamps at both ends: aim >= 230px and session >= 300px", () => {
+  it("clamps the anchor width to [360, 1400]px", () => {
     const { root, sep } = setup();
-    // Far left: aim floors at 230 (total 1090 → sess 860).
-    drag(sep, { x: 600, y: 300 }, { x: 0, y: 300 });
-    expect(root.style.getPropertyValue("--aim")).toBe("230fr");
-    expect(root.style.getPropertyValue("--sess")).toBe("860fr");
-
-    // Far right: session floors at 300 (aim caps at 1090-300=790).
-    drag(sep, { x: 600, y: 300 }, { x: 1900, y: 300 });
-    expect(root.style.getPropertyValue("--aim")).toBe("790fr");
-    expect(root.style.getPropertyValue("--sess")).toBe("300fr");
-    expect(storedLayout()).toEqual({ ...AIM_CONSOLE_LAYOUT_DEFAULTS, aim: 790, sess: 300 });
+    // Far left: conv floors at 360.
+    drag(sep, { x: 700, y: 300 }, { x: 0, y: 300 });
+    expect(root.style.getPropertyValue("--conv")).toBe("360px");
+    // Far right: conv caps at 1400.
+    drag(sep, { x: 700, y: 300 }, { x: 2400, y: 300 });
+    expect(root.style.getPropertyValue("--conv")).toBe("1400px");
+    expect(storedLayout()).toEqual({ ...AIM_CONSOLE_LAYOUT_DEFAULTS, conv: 1400 });
   });
 
-  it("double-click resets to the defaults and clears the stored layout", () => {
+  it("double-click resets to the default anchor width and clears the stored layout", () => {
     const { root, sep } = setup();
-    drag(sep, { x: 600, y: 300 }, { x: 650, y: 300 });
+    drag(sep, { x: 700, y: 300 }, { x: 760, y: 300 });
     expect(storedLayout()).not.toBeNull();
 
     fireEvent.doubleClick(sep);
-    // Back to the untouched defaults — stored layout CLEARED, not re-pinned.
     expect(storedLayout()).toBeNull();
-    expect(root.style.getPropertyValue("--aim")).toBe("1.18fr");
-    expect(root.style.getPropertyValue("--sess")).toBe("1fr");
+    expect(root.style.getPropertyValue("--conv")).toBe("720px");
   });
 });
 
-describe("SessionPrGutter — Session|PR rail gutter", () => {
-  it("is inert while the rail is collapsed", () => {
+describe("AimRemoteGutter — Aim|Remote gutter (docked only)", () => {
+  // Open the Remote, then dock it (the gutter is inert while collapsed AND
+  // while overlaid — only the docked column is drag-resizable).
+  function openAndDock() {
+    fireEvent.click(screen.getByRole("button", { name: "Expand PR / Issue rail" }));
+    fireEvent.click(screen.getByRole("button", { name: "Dock the Remote panel" }));
+  }
+
+  it("is inert while the Remote is collapsed", () => {
     renderConsole();
     const root = screen.getByTestId("aim-console");
-    const sep = screen.getByRole("separator", { name: "Resize PR rail" });
+    const sep = screen.getByRole("separator", { name: "Resize Remote panel" });
     expect(sep.className).toContain("off");
-
     stubRect(root.querySelector(".ac-pr") as Element, { width: 46 });
     drag(sep, { x: 1000, y: 300 }, { x: 900, y: 300 });
     fireEvent.doubleClick(sep);
-    // No live track write, no persistence — the gutter ignored everything.
     expect(root.style.getPropertyValue("--pr")).toBe("");
     expect(storedLayout()).toBeNull();
   });
 
-  it("drags the open rail within 240–520px and persists on pointerup", () => {
+  it("is inert while the Remote is OVERLAID (open but not docked)", () => {
+    renderConsole();
+    fireEvent.click(screen.getByRole("button", { name: "Expand PR / Issue rail" }));
+    const sep = screen.getByRole("separator", { name: "Resize Remote panel" });
+    // Overlay is the default open mode — the edge gutter stays inert.
+    expect(sep.className).toContain("off");
+  });
+
+  it("drags the docked Remote within 240–520px and persists on pointerup", () => {
     renderConsole();
     const root = screen.getByTestId("aim-console");
-    fireEvent.click(screen.getByRole("button", { name: "Expand PR / Issue rail" }));
-    // Open: the inline --pr carries the persisted (default) width.
-    expect(root.style.getPropertyValue("--pr")).toBe("320px");
+    openAndDock();
+    // Open carries the persisted (default) width.
+    expect(root.style.getPropertyValue("--pr")).toBe("360px");
 
-    const sep = screen.getByRole("separator", { name: "Resize PR rail" });
+    const sep = screen.getByRole("separator", { name: "Resize Remote panel" });
     expect(sep.className).not.toContain("off");
-    stubRect(root.querySelector(".ac-pr") as Element, { width: 320 });
+    stubRect(root.querySelector(".ac-pr") as Element, { width: 360 });
 
-    // Pointer left = wider rail: 320 - (-100) = 420.
+    // Pointer left = wider panel: 360 - (-100) = 460.
     drag(sep, { x: 1000, y: 300 }, { x: 900, y: 300 });
-    expect(root.style.getPropertyValue("--pr")).toBe("420px");
-    expect(storedLayout()).toEqual({ ...AIM_CONSOLE_LAYOUT_DEFAULTS, pr: 420 });
+    expect(root.style.getPropertyValue("--pr")).toBe("460px");
+    expect(storedLayout()).toEqual({ ...AIM_CONSOLE_LAYOUT_DEFAULTS, pr: 460 });
 
     // Clamp floor (240) and ceiling (520).
     drag(sep, { x: 1000, y: 300 }, { x: 1900, y: 300 });
@@ -206,10 +211,9 @@ describe("SessionPrGutter — Session|PR rail gutter", () => {
     expect(root.style.getPropertyValue("--pr")).toBe("520px");
     expect(storedLayout()).toEqual({ ...AIM_CONSOLE_LAYOUT_DEFAULTS, pr: 520 });
 
-    // Double-click resets the rail width (and clears the all-default blob).
     fireEvent.doubleClick(sep);
     expect(storedLayout()).toBeNull();
-    expect(root.style.getPropertyValue("--pr")).toBe("320px");
+    expect(root.style.getPropertyValue("--pr")).toBe("360px");
   });
 });
 
@@ -308,13 +312,13 @@ describe("FooterGutter — bash-footer height gutter", () => {
 });
 
 describe("aimConsoleLayout prefs round-trip", () => {
-  it("restores a stored layout on mount (panes, rail, footer)", () => {
-    seedLayout({ aim: 700, sess: 380, pr: 400, footer: 240 });
+  it("restores a stored layout on mount (anchor, remote, footer)", () => {
+    seedLayout({ conv: 820, pr: 400, footer: 240 });
     renderConsole();
     const root = screen.getByTestId("aim-console");
-    expect(root.style.getPropertyValue("--aim")).toBe("700fr");
-    expect(root.style.getPropertyValue("--sess")).toBe("380fr");
-    // The rail width applies once the rail opens.
+    // The conversation anchor applies immediately.
+    expect(root.style.getPropertyValue("--conv")).toBe("820px");
+    // The Remote width applies once it opens.
     expect(root.style.getPropertyValue("--pr")).toBe("");
     fireEvent.click(screen.getByRole("button", { name: "Expand PR / Issue rail" }));
     expect(root.style.getPropertyValue("--pr")).toBe("400px");
@@ -326,15 +330,10 @@ describe("aimConsoleLayout prefs round-trip", () => {
   it("coerces a corrupt / out-of-range stored layout on load", () => {
     localStorage.setItem(
       UI_PREFS_STORAGE_KEY,
-      JSON.stringify({ aimConsoleLayout: { aim: -3, sess: "x", pr: 9999, footer: 12 } }),
+      JSON.stringify({ aimConsoleLayout: { conv: 9999, pr: 9999, footer: 12 } }),
     );
-    // Bad fr weights fall back per-field; px values clamp to their windows.
-    expect(loadUIPrefs().aimConsoleLayout).toEqual({
-      aim: AIM_CONSOLE_LAYOUT_DEFAULTS.aim,
-      sess: AIM_CONSOLE_LAYOUT_DEFAULTS.sess,
-      pr: 520,
-      footer: 110,
-    });
+    // Out-of-range px values clamp to their windows (conv → 1400, pr → 520).
+    expect(loadUIPrefs().aimConsoleLayout).toEqual({ conv: 1400, pr: 520, footer: 110 });
 
     // A non-object blob (or an all-defaults one) normalises to null.
     localStorage.setItem(UI_PREFS_STORAGE_KEY, JSON.stringify({ aimConsoleLayout: "garbage" }));

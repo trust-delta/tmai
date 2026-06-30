@@ -79,15 +79,20 @@ interface PrRailProps {
    *  count. Empty for a cwd-synthesized unit (same convention as the S4
    *  bash footer's fallback). */
   repos: UnitRepoWire[];
-  /** Whether the rail is expanded — drives `aria-expanded` on the collapsed
-   *  rail button. The actual show/hide is the root's `.pr-open` display
-   *  toggle (S1), untouched here. */
+  /** Whether the Remote panel is expanded — drives `aria-expanded` on the
+   *  collapsed rail button. The actual show/hide + overlay/dock positioning is
+   *  the root's `.remote-open` / `.remote-dock` classes (AimConsole), not here. */
   open: boolean;
-  /** The S1 mechanism's `setPrOpen(true)` (collapsed rail click) /
-   *  `setPrOpen(false)` (✕), threaded in so the open state stays in
-   *  `AimConsole`. */
+  /** Whether the open panel is DOCKED (push, both panes visible) vs the default
+   *  OVERLAY (floats over the Aim pane). Drives the dock-toggle pressed state. */
+  docked?: boolean;
+  /** `setRemoteOpen(true)` (collapsed rail click) / collapse (✕), threaded in so
+   *  the open state stays in `AimConsole`. */
   onExpand: () => void;
   onCollapse: () => void;
+  /** Toggle dock ⇄ overlay for the open panel (the ⊟ control). Absent in
+   *  isolation renders → the control is not shown. */
+  onToggleDock?: () => void;
   /** Remote-Δ effective cursor for the PRs / Issues sections (#822), each =
    *  MAX(unit panel close, that section's close), threaded from `AimConsole`
    *  (which owns the shared `remoteDeltaCursors` ui-pref). `null` = no close
@@ -115,8 +120,10 @@ export function PrRail({
   unitLabel,
   repos,
   open,
+  docked,
   onExpand,
   onCollapse,
+  onToggleDock,
   prsCursor,
   issuesCursor,
 }: PrRailProps) {
@@ -174,16 +181,39 @@ export function PrRail({
       {/* ── expanded panel (per-repo PR + Issue inventory) ── */}
       <div className="ac-prfull">
         <div className="ac-prh">
-          PR / ISSUE — unit {unitLabel} · {repos.length} repos
-          <button
-            type="button"
-            className="ac-x"
-            onClick={onCollapse}
-            title="Collapse PR / Issue rail"
-            aria-label="Collapse PR / Issue rail"
-          >
-            ✕
-          </button>
+          {/* Dock ⇄ float toggle at the TOP-LEFT (⊟ overlay → ⊞ docked). */}
+          {onToggleDock !== undefined && (
+            <button
+              type="button"
+              className={cn("ac-prdock", docked && "on")}
+              onClick={onToggleDock}
+              aria-pressed={docked === true}
+              title={
+                docked
+                  ? "Float — overlay the Remote panel over the Aim pane"
+                  : "Dock — push the Aim pane aside so both stay visible"
+              }
+              aria-label={docked ? "Float the Remote panel (overlay)" : "Dock the Remote panel"}
+            >
+              {docked ? "⊞" : "⊟"}
+            </button>
+          )}
+          <span className="ac-prh-title">
+            PR / ISSUE — unit {unitLabel} · {repos.length} repos
+          </span>
+          {/* Explicit close ONLY when docked — the overlay closes by clicking
+              outside it (AimConsole), so it carries no ✕. */}
+          {docked === true && (
+            <button
+              type="button"
+              className="ac-x"
+              onClick={onCollapse}
+              title="Collapse PR / Issue rail"
+              aria-label="Collapse PR / Issue rail"
+            >
+              ✕
+            </button>
+          )}
         </div>
         <div className="ac-prb">
           <PrGroup repos={prRepos} count={openPrCount} cursor={prsCursor} />

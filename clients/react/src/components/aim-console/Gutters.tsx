@@ -22,18 +22,19 @@
 
 import { useCallback, useRef, useState } from "react";
 import {
+  AIM_CONSOLE_CONV_WIDTH_MAX,
+  AIM_CONSOLE_CONV_WIDTH_MIN,
   AIM_CONSOLE_FOOTER_MIN,
   AIM_CONSOLE_PR_WIDTH_MAX,
   AIM_CONSOLE_PR_WIDTH_MIN,
+  clampAimConsoleConvWidth,
   clampAimConsolePrWidth,
 } from "@/lib/ui-prefs";
 import { cn } from "@/lib/utils";
 
-// Drag clamps (mock gutA/gutF): pane floors keep the Aim worklist and the
-// Session conversation usable at the extremes; the footer may take at most
-// 60% of the Session pane so the conversation never collapses under it.
-export const AIM_PANE_MIN_PX = 230;
-export const SESSION_PANE_MIN_PX = 300;
+// The footer may take at most 60% of the Session pane so the conversation
+// never collapses under it. (The pane-width floors now live in the ui-prefs
+// conv / pr clamps the gutters call directly.)
 export const FOOTER_MAX_SESSION_RATIO = 0.6;
 
 interface ReadoutState {
@@ -157,51 +158,42 @@ function rootOf(gutter: HTMLElement): HTMLElement | null {
   return gutter.closest<HTMLElement>(".aim-console");
 }
 
-/** Gutter A — Aim|Session. Rewrites BOTH fr tracks from the live px split
- *  (mock gutA), so the two panes keep window-scaling after the drag while
- *  honouring the px floors at drag time. `aimShare` (the committed Aim share
- *  of the two panes, 0–100) feeds aria-valuenow. */
-export function AimSessionGutter({
-  aimShare,
+/** Gutter A — Conversation|Aim. Rewrites `--conv` (the Conversation anchor
+ *  width in px) from the live drag, clamped to the storage bounds (the CSS
+ *  applies the live 62vw ceiling on top). `convWidth` (the committed anchor
+ *  width) feeds aria-valuenow. */
+export function ConvAimGutter({
+  convWidth,
   onCommit,
   onReset,
 }: {
-  aimShare: number;
-  onCommit: (aim: number, sess: number) => void;
+  convWidth: number;
+  onCommit: (conv: number) => void;
   onReset: () => void;
 }) {
-  const measureRef = useRef({ aim0: 0, total: 0 });
-  const valueRef = useRef<{ aim: number; sess: number } | null>(null);
+  const conv0Ref = useRef(0);
+  const valueRef = useRef<number | null>(null);
 
   const onStart = useCallback((gutter: HTMLElement) => {
-    const root = rootOf(gutter);
-    const aimEl = root?.querySelector(".ac-aim");
-    const sessEl = root?.querySelector(".ac-session");
-    if (!aimEl || !sessEl) return false;
-    const aim0 = aimEl.getBoundingClientRect().width;
-    const total = aim0 + sessEl.getBoundingClientRect().width;
-    if (total <= 0) return false;
-    measureRef.current = { aim0, total };
+    const sessEl = rootOf(gutter)?.querySelector(".ac-session");
+    if (!sessEl) return false;
+    const conv0 = sessEl.getBoundingClientRect().width;
+    if (conv0 <= 0) return false;
+    conv0Ref.current = conv0;
     valueRef.current = null;
     return true;
   }, []);
 
   const onMove = useCallback((gutter: HTMLElement, delta: number) => {
-    const { aim0, total } = measureRef.current;
-    const aim = Math.round(
-      Math.min(Math.max(aim0 + delta, AIM_PANE_MIN_PX), total - SESSION_PANE_MIN_PX),
-    );
-    const sess = Math.round(total) - aim;
-    valueRef.current = { aim, sess };
-    const root = rootOf(gutter);
-    root?.style.setProperty("--aim", `${aim}fr`);
-    root?.style.setProperty("--sess", `${sess}fr`);
-    return `aim ${aim}px · sess ${sess}px`;
+    // Dragging right widens the conversation anchor.
+    const conv = clampAimConsoleConvWidth(conv0Ref.current + delta);
+    valueRef.current = conv;
+    rootOf(gutter)?.style.setProperty("--conv", `${conv}px`);
+    return `conv ${conv}px`;
   }, []);
 
   const onEnd = useCallback(() => {
-    const v = valueRef.current;
-    if (v) onCommit(v.aim, v.sess);
+    if (valueRef.current !== null) onCommit(valueRef.current);
   }, [onCommit]);
 
   const { live, readout, handlers } = useGutterDrag({ axis: "x", onStart, onMove, onEnd, onReset });
@@ -213,10 +205,10 @@ export function AimSessionGutter({
       role="separator"
       tabIndex={0}
       aria-orientation="vertical"
-      aria-label="Resize Aim / Session panes"
-      aria-valuenow={Math.round(aimShare)}
-      aria-valuemin={0}
-      aria-valuemax={100}
+      aria-label="Resize Conversation / Aim panes"
+      aria-valuenow={Math.round(convWidth)}
+      aria-valuemin={AIM_CONSOLE_CONV_WIDTH_MIN}
+      aria-valuemax={AIM_CONSOLE_CONV_WIDTH_MAX}
       title="Drag to resize · double-click to reset"
       {...handlers}
     >
@@ -225,16 +217,17 @@ export function AimSessionGutter({
   );
 }
 
-/** Gutter B — Session|PR rail. Adjusts `--pr` (px) while the rail is open;
- *  inert (`off`) while it is collapsed to the 46px rail (mock gutB).
- *  `prWidth` (the committed rail width) feeds aria-valuenow. */
-export function SessionPrGutter({
-  open,
+/** Gutter B — Aim|Remote. Adjusts `--pr` (px) while the Remote is DOCKED;
+ *  inert (`off`) while collapsed or overlaid (the overlay drawer carries its
+ *  own edge handle). `prWidth` (the committed Remote width) feeds
+ *  aria-valuenow. */
+export function AimRemoteGutter({
+  active,
   prWidth,
   onCommit,
   onReset,
 }: {
-  open: boolean;
+  active: boolean;
   prWidth: number;
   onCommit: (pr: number) => void;
   onReset: () => void;
@@ -251,11 +244,11 @@ export function SessionPrGutter({
   }, []);
 
   const onMove = useCallback((gutter: HTMLElement, delta: number) => {
-    // The rail grows leftwards: pointer left = wider rail.
+    // The Remote grows leftwards: pointer left = wider panel.
     const pr = clampAimConsolePrWidth(pr0Ref.current - delta);
     valueRef.current = pr;
     rootOf(gutter)?.style.setProperty("--pr", `${pr}px`);
-    return `pr ${pr}px`;
+    return `remote ${pr}px`;
   }, []);
 
   const onEnd = useCallback(() => {
@@ -264,7 +257,7 @@ export function SessionPrGutter({
 
   const { live, readout, handlers } = useGutterDrag({
     axis: "x",
-    disabled: !open,
+    disabled: !active,
     onStart,
     onMove,
     onEnd,
@@ -274,16 +267,16 @@ export function SessionPrGutter({
   return (
     // biome-ignore lint/a11y/useSemanticElements: a div is the draggable splitter (RPanel precedent)
     <div
-      className={cn("ac-vgut", !open && "off", live && "live")}
+      className={cn("ac-vgut", !active && "off", live && "live")}
       role="separator"
-      tabIndex={open ? 0 : -1}
+      tabIndex={active ? 0 : -1}
       aria-orientation="vertical"
-      aria-label="Resize PR rail"
-      aria-disabled={!open}
+      aria-label="Resize Remote panel"
+      aria-disabled={!active}
       aria-valuenow={Math.round(prWidth)}
       aria-valuemin={AIM_CONSOLE_PR_WIDTH_MIN}
       aria-valuemax={AIM_CONSOLE_PR_WIDTH_MAX}
-      title={open ? "Drag to resize · double-click to reset" : undefined}
+      title={active ? "Drag to resize · double-click to reset" : undefined}
       {...handlers}
     >
       <ReadoutChip readout={readout} />
