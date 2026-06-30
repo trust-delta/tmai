@@ -5,11 +5,7 @@
  * gatekeeper rules (#11), and selector disambiguation (multiple dispatches
  * may reference the same PR number; the resolver reports them as ambiguous).
  */
-export type DispatchKind = { "kind": "issue", 
-/**
- * Issue number.
- */
-number: bigint, } | { "kind": "pr", 
+export type DispatchKind = { "kind": "pr", 
 /**
  * PR number.
  */

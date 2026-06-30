@@ -222,7 +222,7 @@ pid: number, } | { "type": "ActionPerformed",
  */
 origin: ActionOrigin, 
 /**
- * API action name (e.g., "dispatch_issue", "kill_agent", "merge_pr")
+ * API action name (e.g., "spawn_worktree", "kill_agent", "merge_pr")
  */
 action: string, 
 /**

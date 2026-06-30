@@ -25,7 +25,7 @@ interface DispatchRole {
 const ROLES: DispatchRole[] = [
   {
     title: "Implementer",
-    subtitle: "dispatch_issue / spawn_worktree",
+    subtitle: "spawn_worktree",
     read: (s) => s.dispatch.implementer ?? null,
     write: (s, bundle) => ({ ...s, dispatch: { ...s.dispatch, implementer: bundle } }),
   },

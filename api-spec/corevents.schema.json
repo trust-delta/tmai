@@ -373,28 +373,6 @@
       "description": "Classification of what was dispatched. Drives notification phrasing,\ngatekeeper rules (#11), and selector disambiguation (multiple dispatches\nmay reference the same PR number; the resolver reports them as ambiguous).",
       "oneOf": [
         {
-          "description": "Work attached to a GitHub issue (no PR yet).",
-          "properties": {
-            "kind": {
-              "enum": [
-                "issue"
-              ],
-              "type": "string"
-            },
-            "number": {
-              "description": "Issue number.",
-              "format": "int64",
-              "minimum": 0,
-              "type": "integer"
-            }
-          },
-          "required": [
-            "number",
-            "kind"
-          ],
-          "type": "object"
-        },
-        {
           "description": "Work attached to an existing pull request (e.g. follow-up commits).",
           "properties": {
             "kind": {
@@ -447,15 +425,6 @@
           "description": "Branch the dispatched work targets.",
           "type": [
             "string",
-            "null"
-          ]
-        },
-        "issue_number": {
-          "description": "Issue number when applicable.",
-          "format": "int64",
-          "minimum": 0,
-          "type": [
-            "integer",
             "null"
           ]
         },
@@ -2712,7 +2681,7 @@
       "description": "A side-effect API action was performed (for orchestrator notification)",
       "properties": {
         "action": {
-          "description": "API action name (e.g., \"dispatch_issue\", \"kill_agent\", \"merge_pr\")",
+          "description": "API action name (e.g., \"spawn_worktree\", \"kill_agent\", \"merge_pr\")",
           "type": "string"
         },
         "origin": {
