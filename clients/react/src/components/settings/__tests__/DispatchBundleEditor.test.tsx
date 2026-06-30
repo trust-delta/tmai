@@ -11,7 +11,7 @@ function renderEditor(bundle: DispatchBundle | null) {
   render(
     <DispatchBundleEditor
       title="Implementer"
-      subtitle="dispatch_issue / spawn_worktree"
+      subtitle="spawn_worktree"
       bundle={bundle}
       onAtomicChange={onAtomic}
       onTextDraft={onDraft}

@@ -25,10 +25,6 @@ branch?: string,
  */
 base_branch?: string, 
 /**
- * Issue number when applicable.
- */
-issue_number?: bigint, 
-/**
  * PR number when applicable.
  */
 pr_number?: bigint, 

@@ -15,8 +15,6 @@ pub struct DispatchRefs {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub branch: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub issue_number: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub pr_number: Option<Value>,
     pub project_root: String,
     pub title: String,

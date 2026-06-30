@@ -25,7 +25,7 @@
           {
             "name": "id",
             "in": "path",
-            "description": "Agent identifier — canonical AgentId, target, pty_session_id, or semantic (issue:N / pr:N)",
+            "description": "Agent identifier — canonical AgentId, target, pty_session_id, or semantic (pr:N)",
             "required": true,
             "schema": {
               "type": "string"
@@ -1592,7 +1592,7 @@
             "properties": {
               "action": {
                 "type": "string",
-                "description": "API action name (e.g., \"dispatch_issue\", \"kill_agent\", \"merge_pr\")"
+                "description": "API action name (e.g., \"spawn_worktree\", \"kill_agent\", \"merge_pr\")"
               },
               "origin": {
                 "$ref": "#/components/schemas/ActionOrigin",
@@ -1861,28 +1861,6 @@
         "oneOf": [
           {
             "type": "object",
-            "description": "Work attached to a GitHub issue (no PR yet).",
-            "required": [
-              "number",
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "issue"
-                ]
-              },
-              "number": {
-                "type": "integer",
-                "format": "int64",
-                "description": "Issue number.",
-                "minimum": 0
-              }
-            }
-          },
-          {
-            "type": "object",
             "description": "Work attached to an existing pull request (e.g. follow-up commits).",
             "required": [
               "number",
@@ -1942,15 +1920,6 @@
               "null"
             ],
             "description": "Branch the dispatched work targets."
-          },
-          "issue_number": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "description": "Issue number when applicable.",
-            "minimum": 0
           },
           "pr_number": {
             "type": [
