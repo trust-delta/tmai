@@ -18,6 +18,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { describe, expect, it, vi } from "vitest";
 import { ConfirmProvider } from "@/components/layout/ConfirmDialog";
 import type { AimsResponse, SlotResponse, UnitIssuesResponse, UnitPrsResponse } from "@/lib/api";
+import { UI_PREFS_STORAGE_KEY } from "@/lib/ui-prefs";
 import { UIPrefsProvider } from "@/lib/ui-prefs-provider";
 import { AimConsole } from "../AimConsole";
 
@@ -154,5 +155,42 @@ describe("AimConsole — S1 shell", () => {
     renderConsole({ activeUnitName: null });
     // metaUnit = units[0].name when activeUnitName is null.
     expect(screen.getByText(/unit tmai · opus-4\.8 · max/)).toBeTruthy();
+  });
+});
+
+// The remote-Δ freshness instrument used to live ONLY in the producer-console R
+// panel, so the aim console — the DEFAULT surface — never recorded the
+// operator's looking-acts (#606 §1, the same stranding shape as #897/#898). The
+// close act (rail collapse) must stamp the unit's `panel` cursor in the SHARED
+// `remoteDeltaCursors` ui-pref. This guards that the instrument is wired in the
+// default surface, not just in the opt-out producer console.
+describe("AimConsole — remote-Δ close act (#606 §1, default surface)", () => {
+  function readCursors(): Record<string, { panel?: string }> {
+    const raw = localStorage.getItem(UI_PREFS_STORAGE_KEY);
+    return raw === null ? {} : (JSON.parse(raw).remoteDeltaCursors ?? {});
+  }
+
+  it("stamps the focused unit's panel cursor on rail collapse (the close act)", async () => {
+    localStorage.clear();
+    renderConsole({ activeUnitName: "tmai" });
+    // Expand (start looking — NOT a close act) then collapse (the close act).
+    fireEvent.click(screen.getByRole("button", { name: "Expand PR / Issue rail" }));
+    fireEvent.click(screen.getByRole("button", { name: "Collapse PR / Issue rail" }));
+    await waitFor(() => {
+      expect(typeof readCursors().tmai?.panel).toBe("string");
+    });
+  });
+
+  it("does not stamp a cursor when no unit is focused (display fallback ≠ focus)", async () => {
+    localStorage.clear();
+    // metaUnit displays "tmai" (units[0]) but the FOCUS is null — the close act
+    // must key on the real focus, so no cursor is written.
+    renderConsole({ activeUnitName: null });
+    fireEvent.click(screen.getByRole("button", { name: "Expand PR / Issue rail" }));
+    fireEvent.click(screen.getByRole("button", { name: "Collapse PR / Issue rail" }));
+    await waitFor(() => {
+      // The pref blob persists on mount; remoteDeltaCursors must stay empty.
+      expect(Object.keys(readCursors())).toHaveLength(0);
+    });
   });
 });

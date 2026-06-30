@@ -1051,6 +1051,15 @@
   padding-bottom: 12px;
   letter-spacing: 2px;
 }
+/* Remote-Δ unit total on the collapsed rail (#822 / #606 §1). Cyan = the
+   aim-console info-family token (NOT the owed amber `.ac-v.w`): "unobserved"
+   is a neutral freshness FACT, never a debt. Shares the `.ac-v` vertical look
+   so it sits inline with the PR / Issue counts. */
+.aim-console .ac-prrail .ac-v.dl {
+  color: var(--cyan);
+  border-color: var(--cyan-d);
+  background: var(--cyan-d);
+}
 .aim-console .ac-prfull {
   display: none;
   flex-direction: column;
@@ -1114,6 +1123,15 @@
    context; as a PR-row's first child it sits flush after the row padding. */
 .aim-console .ac-pi .ac-repo {
   margin-left: 0;
+}
+/* Remote-Δ leading accent on an unobserved row (#822 / #606 §1). Cyan
+   info-family token (NOT the owed amber): a freshness fact ("changed since
+   見ていた"), never a debt. Observed rows render no counterpart. */
+.aim-console .ac-pi .ac-unobs {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--cyan);
+  flex: none;
 }
 .aim-console .ac-pn {
   font-family: var(--mono);
