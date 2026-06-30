@@ -1117,12 +1117,10 @@
   font-size: 10.5px;
   color: var(--dim);
 }
-/* Dock ⇄ float toggle (⊟ / ⊞), then the collapse ✕; the dock button carries
-   the margin so the pair sits flush-right (the ✕ keeps its own auto for the
-   isolation case where no dock control renders). */
+/* Dock ⇄ float toggle (⊟ / ⊞) sits at the TOP-LEFT of the header; the title
+   fills the middle; the collapse ✕ (docked only) goes flush-right. */
 .aim-console .ac-prh .ac-prdock {
-  margin-left: auto;
-  margin-right: 11px;
+  margin-right: 9px;
   border: none;
   background: transparent;
   color: inherit;
@@ -1135,8 +1133,15 @@
 .aim-console .ac-prh .ac-prdock.on {
   color: var(--cyan);
 }
+.aim-console .ac-prh .ac-prh-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .aim-console .ac-prh .ac-x {
-  margin-left: auto;
+  margin-left: 9px;
   border: none;
   background: transparent;
   color: inherit;

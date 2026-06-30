@@ -181,7 +181,7 @@ export function PrRail({
       {/* ── expanded panel (per-repo PR + Issue inventory) ── */}
       <div className="ac-prfull">
         <div className="ac-prh">
-          PR / ISSUE — unit {unitLabel} · {repos.length} repos
+          {/* Dock ⇄ float toggle at the TOP-LEFT (⊟ overlay → ⊞ docked). */}
           {onToggleDock !== undefined && (
             <button
               type="button"
@@ -198,15 +198,22 @@ export function PrRail({
               {docked ? "⊞" : "⊟"}
             </button>
           )}
-          <button
-            type="button"
-            className="ac-x"
-            onClick={onCollapse}
-            title="Collapse PR / Issue rail"
-            aria-label="Collapse PR / Issue rail"
-          >
-            ✕
-          </button>
+          <span className="ac-prh-title">
+            PR / ISSUE — unit {unitLabel} · {repos.length} repos
+          </span>
+          {/* Explicit close ONLY when docked — the overlay closes by clicking
+              outside it (AimConsole), so it carries no ✕. */}
+          {docked === true && (
+            <button
+              type="button"
+              className="ac-x"
+              onClick={onCollapse}
+              title="Collapse PR / Issue rail"
+              aria-label="Collapse PR / Issue rail"
+            >
+              ✕
+            </button>
+          )}
         </div>
         <div className="ac-prb">
           <PrGroup repos={prRepos} count={openPrCount} cursor={prsCursor} />

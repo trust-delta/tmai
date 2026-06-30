@@ -373,10 +373,56 @@ describe("PrRail — expand / collapse (S1 mechanism, threaded callbacks)", () =
     expect(props.onExpand).toHaveBeenCalledTimes(1);
   });
 
-  it("clicking the ✕ calls onCollapse", () => {
-    const props = renderRail({ open: true });
+  it("shows the ✕ ONLY when docked (the overlay closes by clicking outside)", () => {
+    // Overlay (open, not docked) — no ✕.
+    const { rerender } = render(
+      <PrRail
+        unitName="tmai"
+        unitLabel="tmai"
+        repos={REPOS}
+        open={true}
+        docked={false}
+        onExpand={vi.fn()}
+        onCollapse={vi.fn()}
+        onToggleDock={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Collapse PR / Issue rail" })).toBeNull();
+
+    // Docked — the ✕ appears and calls onCollapse.
+    const onCollapse = vi.fn();
+    rerender(
+      <PrRail
+        unitName="tmai"
+        unitLabel="tmai"
+        repos={REPOS}
+        open={true}
+        docked={true}
+        onExpand={vi.fn()}
+        onCollapse={onCollapse}
+        onToggleDock={vi.fn()}
+      />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Collapse PR / Issue rail" }));
-    expect(props.onCollapse).toHaveBeenCalledTimes(1);
+    expect(onCollapse).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the dock ⊟/⊞ toggle and calls onToggleDock", () => {
+    const onToggleDock = vi.fn();
+    render(
+      <PrRail
+        unitName="tmai"
+        unitLabel="tmai"
+        repos={REPOS}
+        open={true}
+        docked={false}
+        onExpand={vi.fn()}
+        onCollapse={vi.fn()}
+        onToggleDock={onToggleDock}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Dock the Remote panel" }));
+    expect(onToggleDock).toHaveBeenCalledTimes(1);
   });
 
   it("reflects the open state on the rail's aria-expanded", () => {

@@ -30,7 +30,7 @@
 // from the persisted `aimConsoleLayout` ui-pref, and drag end (not per-move)
 // writes it back.
 
-import { type CSSProperties, useCallback, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useState } from "react";
 import { useConfirm } from "@/components/layout/ConfirmDialog";
 import { advanceCursor, effectiveCursor } from "@/components/producer-console/r-panel/remote-delta";
 import type { AgentSnapshot, SlotResponse, TriggerHandoffRitualRequest } from "@/lib/api";
@@ -162,6 +162,22 @@ export function AimConsole({
     setRemoteOpen(false);
     setRemoteDocked(false);
   }, [activeUnitName, cursors, setCursors]);
+
+  // Click-outside-to-close, OVERLAY ONLY. The overlay is a transient peek with
+  // no ✕ — a pointerdown anywhere outside the floating drawer collapses it
+  // (which stamps the close-act cursor via `collapseRemote`). A docked Remote
+  // is a deliberate side-by-side and is NOT dismissed by outside clicks (it has
+  // its own ✕); clicks INSIDE the drawer (incl. the ⊟/⊞ toggle) never close.
+  useEffect(() => {
+    if (!remoteOpen || remoteDocked) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Element | null;
+      if (target?.closest(".ac-prfull")) return;
+      collapseRemote();
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [remoteOpen, remoteDocked, collapseRemote]);
 
   // Drag-resizable layout. The persisted pref IS the layout state — a drag
   // adjusts the custom properties imperatively (no re-render per move, see

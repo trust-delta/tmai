@@ -182,12 +182,16 @@ describe("AimConsole — remote-Δ close act (#606 §1, default surface)", () =>
     return raw === null ? {} : (JSON.parse(raw).remoteDeltaCursors ?? {});
   }
 
-  it("stamps the focused unit's panel cursor on rail collapse (the close act)", async () => {
+  it("stamps the focused unit's panel cursor on close (the close act)", async () => {
     localStorage.clear();
     renderConsole({ activeUnitName: "tmai" });
-    // Expand (start looking — NOT a close act) then collapse (the close act).
+    // Expand (start looking — NOT a close act) then close. The default open mode
+    // is OVERLAY, which closes by clicking OUTSIDE the drawer (no ✕).
     fireEvent.click(screen.getByRole("button", { name: "Expand PR / Issue rail" }));
-    fireEvent.click(screen.getByRole("button", { name: "Collapse PR / Issue rail" }));
+    expect(screen.getByTestId("aim-console").className).toContain("remote-open");
+    fireEvent.pointerDown(screen.getByLabelText("Aim"));
+    // The outside click collapses the overlay (and stamps the close-act cursor).
+    expect(screen.getByTestId("aim-console").className).not.toContain("remote-open");
     await waitFor(() => {
       expect(typeof readCursors().tmai?.panel).toBe("string");
     });
@@ -199,10 +203,23 @@ describe("AimConsole — remote-Δ close act (#606 §1, default surface)", () =>
     // must key on the real focus, so no cursor is written.
     renderConsole({ activeUnitName: null });
     fireEvent.click(screen.getByRole("button", { name: "Expand PR / Issue rail" }));
-    fireEvent.click(screen.getByRole("button", { name: "Collapse PR / Issue rail" }));
+    fireEvent.pointerDown(screen.getByLabelText("Aim"));
     await waitFor(() => {
       // The pref blob persists on mount; remoteDeltaCursors must stay empty.
       expect(Object.keys(readCursors())).toHaveLength(0);
     });
+  });
+
+  it("does NOT close a DOCKED Remote on an outside click (only overlay does)", () => {
+    localStorage.clear();
+    renderConsole({ activeUnitName: "tmai" });
+    fireEvent.click(screen.getByRole("button", { name: "Expand PR / Issue rail" }));
+    fireEvent.click(screen.getByRole("button", { name: "Dock the Remote panel" }));
+    const root = screen.getByTestId("aim-console");
+    expect(root.className).toContain("remote-dock");
+    // Docked is a deliberate side-by-side — an outside click leaves it open.
+    fireEvent.pointerDown(screen.getByLabelText("Aim"));
+    expect(root.className).toContain("remote-open");
+    expect(root.className).toContain("remote-dock");
   });
 });
