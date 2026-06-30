@@ -85,17 +85,30 @@ vi.mock("@/components/agent/AgentActions", () => ({ AgentActions: () => null }))
 vi.mock("@/components/terminal/TerminalPanel", () => ({ TerminalPanel: () => null }));
 vi.mock("@/components/agent/AgentList", () => ({ AgentList: () => null }));
 vi.mock("@/components/terminal/TerminalList", () => ({ TerminalList: () => null }));
-vi.mock("@/components/settings/SettingsPanel", () => ({ SettingsPanel: () => null }));
+vi.mock("@/components/settings/SettingsPanel", () => ({
+  SettingsPanel: ({ onClose }: { onClose: () => void }) => (
+    <div data-testid="settings-panel-stub">
+      settings
+      <button type="button" onClick={onClose}>
+        close-settings
+      </button>
+    </div>
+  ),
+}));
 vi.mock("@/components/calibration/CalibrationPanel", () => ({ CalibrationPanel: () => null }));
 
-// The aim console is stubbed to a marker + an exit button wired to `onExit`,
-// so we can observe the switch and the return path without rendering the
-// real 3-pane shell.
+// The aim console is stubbed to a marker + an exit button wired to `onExit`
+// and an open-settings button wired to `onOpenSettings`, so we can observe the
+// switch, the return path, and the app-level settings lift without rendering
+// the real 3-pane shell.
 vi.mock("@/components/aim-console/AimConsole", () => ({
-  AimConsole: ({ onExit }: { onExit: () => void }) => (
+  AimConsole: ({ onExit, onOpenSettings }: { onExit: () => void; onOpenSettings: () => void }) => (
     <div data-testid="aim-console-stub">
       <button type="button" onClick={onExit}>
         exit-aim
+      </button>
+      <button type="button" onClick={onOpenSettings}>
+        open-settings-aim
       </button>
     </div>
   ),
@@ -198,5 +211,30 @@ describe("App — console-mode coexist toggle", () => {
     fireEvent.click(screen.getByLabelText("Switch to the aim console (preview)"));
     expect(screen.getByTestId("aim-console-stub")).toBeTruthy();
     expect(screen.queryByTestId("producer-console-stub")).toBeNull();
+  });
+
+  // The aim console is a full-window takeover, so the producer console's
+  // inline SettingsPanel is out of reach. The same `showSettings` state is
+  // lifted past the aim-mode early return as a modal overlay (#913), so the
+  // top-bar ⚙ actually opens settings — and the panel's own close dismisses it.
+  it("opens (and closes) the settings overlay in aim mode (#913)", () => {
+    renderWithProviders(<App />);
+
+    // Default aim mode — no settings overlay yet.
+    expect(screen.getByTestId("aim-console-stub")).toBeTruthy();
+    expect(screen.queryByTestId("settings-panel-stub")).toBeNull();
+
+    // The aim console's top-bar ⚙ lifts the app-level settings overlay.
+    fireEvent.click(screen.getByText("open-settings-aim"));
+    expect(screen.getByTestId("settings-panel-stub")).toBeTruthy();
+    // Still the aim console underneath — settings is a modal over it, not a
+    // mode switch (the producer console must NOT appear).
+    expect(screen.getByTestId("aim-console-stub")).toBeTruthy();
+    expect(screen.queryByTestId("producer-console-stub")).toBeNull();
+
+    // The panel's own close button dismisses the overlay back to the console.
+    fireEvent.click(screen.getByText("close-settings"));
+    expect(screen.queryByTestId("settings-panel-stub")).toBeNull();
+    expect(screen.getByTestId("aim-console-stub")).toBeTruthy();
   });
 });

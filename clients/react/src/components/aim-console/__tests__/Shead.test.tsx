@@ -93,7 +93,6 @@ function renderShead(overrides: Partial<Parameters<typeof Shead>[0]> = {}) {
     unitName: "tmai" as string | null,
     currentProjectPath: "/home/u/tmai" as string | null,
     trigger: vi.fn(() => Promise.resolve()),
-    onOpenSettings: vi.fn(),
     ...overrides,
   };
   renderWithProviders(<Shead {...props} />);
@@ -124,7 +123,6 @@ describe("Shead — Producer variant", () => {
         unitName="tmai"
         currentProjectPath="/home/u/tmai"
         trigger={vi.fn(() => Promise.resolve())}
-        onOpenSettings={vi.fn()}
       />,
     );
     const head = screen.getByTestId("ac-shead-producer");
@@ -155,10 +153,9 @@ describe("Shead — Producer variant", () => {
     expect(props.trigger).not.toHaveBeenCalled();
   });
 
-  it("opens settings via ⚙", () => {
-    const props = renderShead();
-    fireEvent.click(screen.getByRole("button", { name: "Open settings — auto-handoff threshold" }));
-    expect(props.onOpenSettings).toHaveBeenCalled();
+  it("has NO settings ⚙ (it moved to the app top-bar — config is app-level)", () => {
+    renderShead();
+    expect(screen.queryByRole("button", { name: /Open settings/ })).toBeNull();
   });
 
   it("restarts (kill → relaunch at the same locus) only after the danger confirm is accepted", async () => {
@@ -202,7 +199,6 @@ describe("Shead — Producer variant", () => {
         unitName="tmai"
         currentProjectPath="/home/u/tmai"
         trigger={vi.fn(() => Promise.resolve())}
-        onOpenSettings={vi.fn()}
       />,
     );
     await waitFor(() => expect(screen.getByText("auto off")).toBeTruthy());
@@ -218,13 +214,10 @@ describe("Shead — worker variant", () => {
     expect(screen.getByText("attention-ui")).toBeTruthy();
     expect(screen.getByText("sonnet-4.6")).toBeTruthy();
     expect(screen.getByText(/repo tmai · main · \.\.\/tmai-wt-attn-ui/)).toBeTruthy();
-    // No handoff ritual, no settings — the worker bar carries kill only.
+    // No handoff ritual — the worker bar carries kill only.
     // And no restart: a worker is bounded (nothing respawns it), so killing it
     // is a legitimate terminal, kept as a plain ✕ kill.
     expect(screen.queryByRole("button", { name: /handoff & restart/i })).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: "Open settings — auto-handoff threshold" }),
-    ).toBeNull();
     expect(
       screen.queryByRole("button", {
         name: "Restart Producer (kill + relaunch fresh; no hand-off)",

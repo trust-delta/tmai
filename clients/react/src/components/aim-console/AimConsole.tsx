@@ -311,6 +311,18 @@ export function AimConsole({
         </button>
         <div className="ac-sp" />
         <div className="ac-meta">unit {metaUnit} · opus-4.8 · max</div>
+        {/* ⚙ Settings — app-level (the WebUI/Producer config affects the whole
+            console, not one conversation), so it lives in the top-bar chrome
+            beside the exit, not in a Session pane's shead. */}
+        <button
+          type="button"
+          className="ac-settings"
+          onClick={onOpenSettings}
+          title="Open settings"
+          aria-label="Open settings"
+        >
+          ⚙
+        </button>
         <button
           type="button"
           className="ac-exit"
@@ -336,7 +348,6 @@ export function AimConsole({
             unitName={activeUnitName}
             currentProjectPath={currentProjectPath}
             trigger={trigger}
-            onOpenSettings={onOpenSettings}
             repos={activeUnit?.repos ?? []}
           />
         </section>
