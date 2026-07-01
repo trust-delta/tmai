@@ -45,7 +45,19 @@ import {
   useRef,
   useState,
 } from "react";
-import { AimBody } from "@/components/producer-console/r-panel/AimBody";
+import { useUnitAims } from "@/hooks/useUnitAims";
+import { api } from "@/lib/api";
+import {
+  AIM_INSPECTOR_HEIGHT_DEFAULT,
+  AIM_INSPECTOR_HEIGHT_MIN,
+  clampAimInspectorHeight,
+} from "@/lib/ui-prefs";
+import { useUIPref } from "@/lib/ui-prefs-provider";
+import { cn } from "@/lib/utils";
+import type { AimState } from "@/types/generated/AimState";
+import type { AimWire } from "@/types/generated/AimWire";
+import type { RepoAimsWire } from "@/types/generated/RepoAimsWire";
+import { AimBody } from "./AimBody";
 import {
   AIM_STATE_LABEL,
   type AimTone,
@@ -71,19 +83,7 @@ import {
   WORKING_DELTA_GLYPH,
   type WorkingDeltaKind,
   workingDeltaKind,
-} from "@/components/producer-console/r-panel/aim-tree";
-import { useUnitAims } from "@/hooks/useUnitAims";
-import { api } from "@/lib/api";
-import {
-  AIM_INSPECTOR_HEIGHT_DEFAULT,
-  AIM_INSPECTOR_HEIGHT_MIN,
-  clampAimInspectorHeight,
-} from "@/lib/ui-prefs";
-import { useUIPref } from "@/lib/ui-prefs-provider";
-import { cn } from "@/lib/utils";
-import type { AimState } from "@/types/generated/AimState";
-import type { AimWire } from "@/types/generated/AimWire";
-import type { RepoAimsWire } from "@/types/generated/RepoAimsWire";
+} from "./aim-tree";
 import { RESIGNATION_FRONTIER, resignationInventory } from "./resignation";
 import { SlackFace } from "./SlackFace";
 import { suggestSlug, validateAimSlug } from "./slug";

@@ -44,19 +44,6 @@
 // presentational and only receives the effective cursors as props. The Δ is an
 // info-tone freshness FACT ("changed since 見ていた"), never the owed amber.
 
-import {
-  issueVocabTimestamp,
-  isUnobserved,
-  prVocabTimestamp,
-  unobservedIssueCount,
-  unobservedPrCount,
-} from "@/components/producer-console/r-panel/remote-delta";
-import {
-  issueStatusPills,
-  type PillTone,
-  prStatusPills,
-  type StatusPill,
-} from "@/components/producer-console/r-panel/status-pills";
 import { useUnitIssues } from "@/hooks/useUnitIssues";
 import { useUnitPrs } from "@/hooks/useUnitPrs";
 import type {
@@ -67,6 +54,14 @@ import type {
   UnitRepoWire,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import {
+  issueVocabTimestamp,
+  isUnobserved,
+  prVocabTimestamp,
+  unobservedIssueCount,
+  unobservedPrCount,
+} from "./remote-delta";
+import { issueStatusPills, type PillTone, prStatusPills, type StatusPill } from "./status-pills";
 
 interface PrRailProps {
   /** Focused unit — scopes both the PR and Issue hooks. `null` parks them

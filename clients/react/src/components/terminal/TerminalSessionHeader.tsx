@@ -12,11 +12,11 @@
 // `auto_handoff_threshold_pct`: workers have no auto-handoff ritual, so
 // there is no per-project threshold to fetch — the bar just warns (amber)
 // as context fills and turns red near full. The ctx readout reuses
-// `ProducerCtxHeader`'s `formatThousands` / `renderBar` so the two surfaces
-// render identically.
+// the shared `formatThousands` / `renderBar` ctx-format helpers so the two
+// surfaces render identically.
 
-import { formatThousands, renderBar } from "@/components/producer-console/ProducerCtxHeader";
 import type { AgentSnapshot } from "@/lib/api";
+import { formatThousands, renderBar } from "@/lib/ctx-format";
 import { cn } from "@/lib/utils";
 
 // Trim the canonical id (`<scheme>:<id>`) to `<scheme>:<first-8-chars>`

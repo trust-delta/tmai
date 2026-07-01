@@ -54,7 +54,6 @@ function renderConsole(overrides: Partial<Parameters<typeof AimConsole>[0]> = {}
     onSelectUnit: vi.fn(),
     onAddUnit: vi.fn(),
     onCloseUnit: vi.fn(),
-    onExit: vi.fn(),
     // S3 Session-pane wiring — empty here so the shell tests stay
     // data-agnostic (no live sessions → the pane parks in its empty state,
     // no TerminalPanel / PreviewPanel mount, no SSE). The pane's own
@@ -142,7 +141,7 @@ describe("AimConsole — S1 shell", () => {
     expect(root.className).not.toContain("remote-dock");
   });
 
-  it("calls onSelectUnit / onAddUnit / onOpenSettings / onExit from the top bar", () => {
+  it("calls onSelectUnit / onAddUnit / onOpenSettings from the top bar", () => {
     const props = renderConsole();
 
     fireEvent.click(screen.getByRole("button", { name: "unit: tmai" }));
@@ -154,9 +153,6 @@ describe("AimConsole — S1 shell", () => {
     // ⚙ Settings lives in the app top-bar (config is app-level), not a Session shead.
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }));
     expect(props.onOpenSettings).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(screen.getByRole("button", { name: "Return to the Producer console" }));
-    expect(props.onExit).toHaveBeenCalledTimes(1);
   });
 
   it("closes a unit only after the confirm gate (× → confirm → onCloseUnit)", async () => {

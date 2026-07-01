@@ -32,7 +32,7 @@ import {
   parseAimBody,
   parseMeans,
 } from "./aim-body-parse";
-import { PROSE_CLASSES } from "./r-viewer/prose";
+import { PROSE_CLASSES } from "./prose";
 
 export type AimBodyVariant = "rpanel" | "console";
 
