@@ -24,16 +24,12 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { useConfirm } from "@/components/layout/ConfirmDialog";
 import {
-  formatThousands,
-  renderBar,
-  thresholdColorClass,
-} from "@/components/producer-console/ProducerCtxHeader";
-import {
   type AgentSnapshot,
   api,
   normalizeGitDir,
   type TriggerHandoffRitualRequest,
 } from "@/lib/api";
+import { formatThousands, renderBar, thresholdColorClass } from "@/lib/ctx-format";
 import { cn } from "@/lib/utils";
 import { statusClass, statusWord } from "./session-status";
 

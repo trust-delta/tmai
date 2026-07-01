@@ -244,26 +244,6 @@
   color: var(--cyan);
   border-color: var(--cyan-d);
 }
-/* exit back to the existing ProducerConsole (the default view). The
-   ENTER toggle lives in StatusBar; this is its EXIT pair, since the
-   full-window aim console replaces the existing chrome incl. StatusBar. */
-.aim-console .ac-exit {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--dim);
-  background: transparent;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 4px 10px;
-  margin-left: 12px;
-  cursor: pointer;
-  letter-spacing: 0.5px;
-}
-.aim-console .ac-exit:hover {
-  color: var(--cyan);
-  border-color: var(--cyan-d);
-}
-
 /* ── 3-pane grid + 5px drag-gutter tracks (mock `.main`, S7) ──────────────
    The gutters are REAL grid tracks, replacing the old `.ac-col` hairline
    borders — the seam at rest is the gutter's own centred 1px line, so the

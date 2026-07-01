@@ -20,17 +20,9 @@
 //     remainder is not enumerable; the inventory shows the boundary, the dark
 //     stays dark but the BOUNDARY is visible.
 
-import {
-  type MeansItem,
-  parseAimBody,
-  parseMeans,
-} from "@/components/producer-console/r-panel/aim-body-parse";
-import {
-  buildChildren,
-  bySlugMap,
-  descendantsOf,
-} from "@/components/producer-console/r-panel/aim-tree";
 import type { AimWire } from "@/types/generated/AimWire";
+import { type MeansItem, parseAimBody, parseMeans } from "./aim-body-parse";
+import { buildChildren, bySlugMap, descendantsOf } from "./aim-tree";
 
 // The quiet frontier line — constant and unconditional: it renders verbatim
 // whether the enumerable buckets are full or empty, because the unwritten

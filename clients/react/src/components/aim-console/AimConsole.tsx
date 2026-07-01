@@ -7,11 +7,11 @@
 // node `aim-ui` (`tmai-core:doc/aims/aim-ui.md`), part of the aim-model
 // dogfood.
 //
-// COEXIST, DO NOT RIP: this is now the DEFAULT surface (see `console-mode.ts`,
-// hub #850 / #851 made it self-sufficient: open + close units); the legacy
-// ProducerConsole is the opt-OUT via this console's EXIT toggle. The dev-tool
-// tokens are scoped to `.aim-console` in `styles/aim-console.css` so they
-// never bleed into the existing console.
+// THE SOLE SURFACE: the legacy ProducerConsole / R-panel shell was ripped —
+// aim is the only console now (no mode toggle, no EXIT pair). This console is
+// self-sufficient: open + close units, launch Producers, drive the whole dev
+// loop. The dev-tool tokens are scoped to `.aim-console` in
+// `styles/aim-console.css`.
 //
 // SCOPE so far: the TOKEN LAYER + the SHELL (S1), the Aim pane (S2), the
 // Session pane (S3), its docked bash footer (S4), and the PR-rail lists (S5).
@@ -39,7 +39,6 @@ import {
   useState,
 } from "react";
 import { useConfirm } from "@/components/layout/ConfirmDialog";
-import { advanceCursor, effectiveCursor } from "@/components/producer-console/r-panel/remote-delta";
 import type { AgentSnapshot, SlotResponse, TriggerHandoffRitualRequest } from "@/lib/api";
 import {
   AIM_CONSOLE_LAYOUT_DEFAULTS,
@@ -53,6 +52,7 @@ import { cn } from "@/lib/utils";
 import { AimPane } from "./AimPane";
 import { AimRemoteGutter, ConvAimGutter, OverlayEdgeGutter } from "./Gutters";
 import { PrRail } from "./PrRail";
+import { advanceCursor, effectiveCursor } from "./remote-delta";
 import { SessionPane } from "./SessionPane";
 // Bundled dev-tool typography (offline-robust @fontsource, NOT a Google Fonts
 // <link>) — loads the exact families `aim-console.css` references via --sans /
@@ -116,10 +116,6 @@ interface AimConsoleProps {
    *  invariant` carve-out: close does NOT respawn). Gated behind an always-on
    *  confirm in the tab; called ONLY after that confirm is accepted. */
   onCloseUnit: (unit: SlotResponse) => void;
-  /** Switch back to the existing ProducerConsole (the default view). The
-   *  ENTER toggle lives in StatusBar; this is its EXIT pair, since the
-   *  full-window aim console replaces the existing chrome incl. StatusBar. */
-  onExit: () => void;
   /** Live agent list (App's `useAgents`) — drives the Session pane's tabs
    *  (Producer + workers). Threaded in rather than read here so the existing
    *  console keeps the single `useAgents` call. */
@@ -148,7 +144,6 @@ export function AimConsole({
   onSelectUnit,
   onAddUnit,
   onCloseUnit,
-  onExit,
   agents,
   currentProjectPath,
   trigger,
@@ -337,15 +332,6 @@ export function AimConsole({
           aria-label="Open settings"
         >
           ⚙
-        </button>
-        <button
-          type="button"
-          className="ac-exit"
-          onClick={onExit}
-          title="Return to the Producer console"
-          aria-label="Return to the Producer console"
-        >
-          ‹ console
         </button>
       </div>
 

@@ -66,7 +66,6 @@ function renderConsole() {
           onSelectUnit={vi.fn()}
           onAddUnit={vi.fn()}
           onCloseUnit={vi.fn()}
-          onExit={vi.fn()}
           agents={[] as AgentSnapshot[]}
           currentProjectPath="/home/u/tmai"
           trigger={vi.fn()}
