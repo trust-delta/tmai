@@ -1,8 +1,8 @@
 // Failure dialog for a rejected / errored handoff-and-restart ritual.
 //
-// Renders the 4-choice surface from DR
-// `tmai-core/doc/decisions/2026-05-14-handoff-lifecycle-and-kill-ux.md`
-// §E. Behaviors (PR4 — intentionally narrow):
+// Renders the 4-choice failure surface for aim `conversation-handoff`
+// (the handoff-and-restart ritual's WebUI lifecycle). Behaviors (PR4 —
+// intentionally narrow):
 //
 //   ┌──────────────────────┬─────────────────────────────────────────┐
 //   │ Force kill           │ POST /api/agents/{id}/kill on the live  │

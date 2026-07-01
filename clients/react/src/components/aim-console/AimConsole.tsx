@@ -168,12 +168,11 @@ export function AimConsole({
   // `repos` is empty there — the footer falls back to `currentProjectPath`.
   const activeUnit = units.find((u) => u.name === activeUnitName) ?? null;
 
-  // Remote-Δ freshness cursors (#822; #606 §1 lift) — the SAME `remoteDeltaCursors`
-  // ui-pref the producer-console R panel owns, so a looking-act in either console
-  // is one human looking-act (the cursor is mode-independent, per-unit). Client
-  // state only, never sent to core; the Producer never reads it. `AimConsole`
-  // owns the cursor here (mirroring `RPanel`); `PrRail` is presentational and
-  // only receives the effective cursors. The rail has ONE close act — the rail
+  // Remote-Δ freshness cursors (#822; #606 §1 lift) — the `remoteDeltaCursors`
+  // ui-pref is owned here (per-unit). Client state only, never sent to core;
+  // the Producer never reads it. `AimConsole` owns the cursor; `PrRail` is
+  // presentational and only receives the effective cursors. The rail has ONE
+  // close act — the rail
   // collapse — so it stamps the coarse `panel` cursor, which via `effectiveCursor`
   // = MAX(panel, section) clears BOTH sections (collapsing the whole rail = done
   // looking at all of it). No section-level close acts, no timers, no per-row

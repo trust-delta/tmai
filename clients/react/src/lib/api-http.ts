@@ -211,8 +211,8 @@ export function isAiAgent(agentType: AgentType): boolean {
 /// `id` carries the canonical scheme (`claude:` / `codex:` / `gemini:` /
 /// `opencode:`) even when the spawn command was wrapped — e.g. the
 /// Producer launch wraps `tmai producer <unit>` under `bash -c` to
-/// satisfy tmai-core's `/api/spawn` allow-list (see
-/// `doc/decisions/2026-05-14-react-producer-console-rebuild.md` polish v4).
+/// satisfy tmai-core's `/api/spawn` allow-list (see aim `producer-cwd`,
+/// Phase 3 — the bash wrap retires when respawn cuts over to engine-direct).
 /// In that wrapped case `agent_type` stays `Custom("bash")` and the
 /// plain `isAiAgent(agent_type)` check misses the Producer.
 ///

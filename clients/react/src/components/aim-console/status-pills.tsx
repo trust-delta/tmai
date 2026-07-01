@@ -130,8 +130,8 @@ export function StatusPills({ pills }: { pills: StatusPill[] }) {
 }
 
 // "EXTERNAL · github = source of truth" framing for the PR / Issue rail
-// headers (C2). PRs and Issues are the GitHub-resident artifacts on the R
-// panel (vs the git-resident decisions / approaches / aims), so this tag
+// headers (C2). PRs and Issues are the GitHub-resident artifacts on the rail
+// (vs the git-resident decisions / approaches / aims), so this tag
 // states that github — not tmai — is their source of truth. Subtle / mono,
 // pushed to the right edge of the section header.
 export function ExternalSourceBadge() {
