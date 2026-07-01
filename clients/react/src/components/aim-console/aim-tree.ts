@@ -142,7 +142,8 @@ export function aimTone(n: AimWire): AimTone {
 
 // ── Working-tree presence facts (#817) ────────────────────────────────
 //
-// Design B of tmai-core's `doc/aims/aim-drift-commit-boundary.md`: the
+// Design B of tmai-core's `doc/aims/drift-git.md` (the working-delta concept,
+// ported from the archived `aim-drift-commit-boundary`): the
 // committed layer (`drift`) states ORDER judgments; `working_delta` states
 // PRESENCE only. The one fact it surfaces to the operator: "the drift verdict
 // on screen is HEAD-based and does not see your uncommitted edit yet" —

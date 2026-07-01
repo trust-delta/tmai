@@ -3,15 +3,16 @@
 
    Faithful port of the destination mock (`origin/mock/aim-ui-sample` →
    `assets/ui-sample.html`, dev-tool / scale variant). Serves aim node
-   `aim-ui` (`tmai-core:doc/aims/aim-ui.md`).
+   `aim-project-artifact` (`tmai-core:doc/aims/aim-project-artifact.md`; the
+   old `aim-ui` node was archived in the corpus rebuild, tmai-core #528).
 
-   COEXIST, DO NOT RIP: the existing console keeps its own
-   tokens/themes (globals.css + lib/theme.ts). EVERYTHING here is scoped
-   under `.aim-console` so the dev-tool palette (low-chroma, k9s/lazygit
-   tone) and the 12.5px/27px density NEVER bleed into the existing
-   console. Custom properties declared on `.aim-console` only inherit
-   DOWN into the aim-console subtree, so the existing UI — which is never
-   a descendant of `.aim-console` — cannot see them.
+   SCOPED HYGIENE: the rest of the app keeps its own tokens/themes
+   (globals.css + lib/theme.ts) — Settings, dialogs, toasts. EVERYTHING here
+   is scoped under `.aim-console` so the dev-tool palette (low-chroma,
+   k9s/lazygit tone) and the 12.5px/27px density NEVER bleed into those
+   surfaces. Custom properties declared on `.aim-console` only inherit DOWN
+   into the aim-console subtree, so non-console UI — never a descendant of
+   `.aim-console` — cannot see them.
 
    This file is NOT processed by Tailwind (it has no `@import "tailwindcss"`)
    and is NOT linted/formatted by biome (CSS is disabled in biome.json), so

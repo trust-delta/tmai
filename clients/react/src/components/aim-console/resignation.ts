@@ -1,5 +1,6 @@
 // Resignation inventory — the pure computation behind the done-set view
-// (issue #811; aim node `aim-resignation-inventory`, parent `aim-recoil-loop`).
+// (issue #811; aim node `aim-resolution-outcome` — the console resignation
+//  inventory ported from the archived `aim-resignation-inventory`, tmai-core #528).
 //
 // done = the human's 満足と諦め status; the weight is on 諦め — accepting the
 // uninspected remainder WITHOUT knowing it. tmai does NOT mechanize done; it
