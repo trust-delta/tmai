@@ -199,7 +199,7 @@ export function ConvAimGutter({
   const { live, readout, handlers } = useGutterDrag({ axis: "x", onStart, onMove, onEnd, onReset });
 
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a div is the draggable splitter (RPanel precedent)
+    // biome-ignore lint/a11y/useSemanticElements: a div is the draggable splitter
     <div
       className={cn("ac-vgut", live && "live")}
       role="separator"
@@ -271,7 +271,7 @@ export function OverlayEdgeGutter({
   const { live, readout, handlers } = useGutterDrag({ axis: "x", onStart, onMove, onEnd, onReset });
 
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a div is the draggable splitter (RPanel precedent)
+    // biome-ignore lint/a11y/useSemanticElements: a div is the draggable splitter
     <div
       className={cn("ac-ovgut", live && "live")}
       role="separator"
@@ -350,7 +350,7 @@ export function AimRemoteGutter({
   });
 
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a div is the draggable splitter (RPanel precedent)
+    // biome-ignore lint/a11y/useSemanticElements: a div is the draggable splitter
     <div
       className={cn("ac-vgut", !active && "off", live && "live")}
       role="separator"
@@ -424,7 +424,7 @@ export function FooterGutter({
   const { live, readout, handlers } = useGutterDrag({ axis: "y", onStart, onMove, onEnd, onReset });
 
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a div is the draggable splitter (RPanel precedent)
+    // biome-ignore lint/a11y/useSemanticElements: a div is the draggable splitter
     <div
       className={cn("ac-hgut", live && "live")}
       role="separator"

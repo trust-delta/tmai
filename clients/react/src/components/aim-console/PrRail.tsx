@@ -4,14 +4,13 @@
 // open-counts + a static `‹ EXTERNAL` framing) that expands to a per-repo
 // PR + Issue inventory grouped across the whole unit.
 //
-// REUSE, DON'T REBUILD: the data comes from `useUnitPrs` / `useUnitIssues`
-// (the same unit-scoped, multi-repo hooks the Producer console's R panel
-// uses), and each row's categorical status pill is derived by the SAME
-// `prStatusPills` / `issueStatusPills` functions (import-only) so the
-// lifecycle/CI colour story stays consistent with `RPrsSection` /
-// `RIssuesSection`. WHY the pills are rendered here as local `.ac-pst` spans
-// instead of the shared `StatusPills` component: `StatusPills` carries the
-// producer-console theme classes; the aim-console reproduces the mock's
+// REUSE, DON'T REBUILD: the data comes from the unit-scoped, multi-repo
+// `useUnitPrs` / `useUnitIssues` hooks, and each row's categorical status pill
+// is derived by the SAME `prStatusPills` / `issueStatusPills` functions
+// (import-only) so the lifecycle/CI colour story stays consistent wherever
+// those pills render. WHY the pills are rendered here as local `.ac-pst` spans
+// instead of the shared `StatusPills` component: `StatusPills` carries its own
+// `TONE_CLASS` tokens; the aim-console reproduces the mock's
 // dev-tool `.pst` look in its own scoped tokens (issue #801 bounding —
 // touch ONLY `aim-console/**` + `aim-console.css`). The colour is still
 // CATEGORICAL, never appraisal (`2026-05-26-tmai-states-facts-not-appraisals`):
@@ -27,15 +26,14 @@
 // `onExpand` / `onCollapse` — it never owns the open state.
 //
 // REMOTE-Δ FRESHNESS (#606 §1 / aim `pr-issue-ci` / instrument #822): the
-// remote-Δ instrument used to live ONLY in the producer-console R panel
-// (`RPrsSection` / `RIssuesSection`), so the aim-console — the DEFAULT surface
+// remote-Δ instrument first shipped (#822/#823) in the now-removed
+// producer-console R panel, so the aim-console — the DEFAULT surface
 // since #850/#851 — showed PR/issue rows but not "which changed since you last
 // looked" (a stranding regression, the same shape as the #897/#898 handoff
-// overlay lift). This rail now carries the instrument too. WHAT it reuses: the
-// pure `remote-delta.ts` helpers (logic, no theme — same import category as the
-// `prStatusPills` derivation). WHAT it does NOT reuse: the producer-console
-// `UnobservedDelta` component, because it carries the producer theme's
-// `text-info` token; the dev-tool Δ accent is its own `.ac-unobs` (cyan = the
+// overlay lift). #606 §1 lifted it here, and the 2026-07-01 producer-console
+// rip made this rail the sole home. WHAT it reuses: the pure `remote-delta.ts`
+// helpers (logic, no theme — same import category as the `prStatusPills`
+// derivation). The Δ accent is its own `.ac-unobs` (cyan = the
 // aim-console info-family token), keeping the #801 bounding (touch ONLY
 // `aim-console/**` + `aim-console.css`). The cursor itself is OWNED by
 // `AimConsole` (the rail-collapse close act stamps the unit's `panel` cursor in

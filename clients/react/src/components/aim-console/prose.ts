@@ -1,10 +1,10 @@
-// Shared markdown prose classes for the R₂ viewers (PR content + record
-// excerpt). Same palette the transcript / digest markdown uses so bodies
-// and excerpts read like the rest of the WebUI. Extracted from
-// `RPrViewer` so the record viewer (`RRecordViewer`) reuses the EXACT
-// styling without restyling — per `2026-05-29-artifact-content-viewer`,
-// standard markdown rendering is the ONE allowed convention inside the
-// viewer's prose, and it must look identical across both R₂ kinds.
+// Shared markdown prose classes. Same palette the transcript / aim-body
+// markdown uses so bodies read like the rest of the WebUI. Standard markdown
+// rendering is the ONE allowed convention inside prose. Consumed by
+// `TranscriptView` and `AimBody`; the R₂ content viewers (`RPrViewer` /
+// `RRecordViewer`) were removed in the 2026-07-01 producer-console rip and a
+// live-fetch confirm viewer is being rebuilt on the aim console (aim
+// `act-in-tmai`).
 
 export const PROSE_CLASSES = `prose prose-invert prose-sm max-w-none
   prose-headings:text-foreground prose-headings:font-semibold

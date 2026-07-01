@@ -1,7 +1,6 @@
-// Hook for the Producer handoff-and-restart ritual (DR
-// `tmai-core/doc/decisions/2026-05-14-handoff-lifecycle-and-kill-ux.md`
-// §E — WebUI surface). Drives the ProducerConsole's in-progress
-// overlay and the 4-choice failure dialog.
+// Hook for the Producer handoff-and-restart ritual (aim `handoff-non-blocking`
+// — WebUI surface). Drives the conversation panel's in-progress overlay and
+// the 4-choice failure dialog.
 //
 // Lifecycle:
 //

@@ -1,8 +1,6 @@
-// Hand-over digest aggregator for the Producer console.
+// Hand-over digest aggregator.
 //
-// Background — `doc/decisions/2026-05-14-react-producer-console-rebuild.md`
-// (cross-refs `tmai-core@doc/decisions/2026-05-13-producer-feedback-loop-
-// and-decision-tiers.md`): the Producer's session-start hand-over is
+// Per aim `conversation-handoff`: the Producer's session-start hand-over is
 // composed from four sections — ▶ Where-you-left-off, ⬢ Cross-unit
 // status, ⬡ Settled decisions, ◐ Working-with-this-human.
 //

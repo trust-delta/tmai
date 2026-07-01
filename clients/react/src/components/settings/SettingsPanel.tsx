@@ -12,9 +12,8 @@ import { WorktreeSection } from "./WorktreeSection";
 
 interface SettingsPanelProps {
   onClose: () => void;
-  /** Phase B of the Producer-console rebuild
-   *  (`doc/decisions/2026-05-14-react-producer-console-rebuild.md`)
-   *  collapses orchestrator-era controls behind an Advanced section.
+  /** Post-inversion default (aim `producer-centric-project`): orchestrator-era
+   *  controls are collapsed behind an Advanced section.
    *  When the operator arrives here from `ProducerConsoleActions`'
    *  Operator-override panel, we want Advanced open by default so
    *  the deep-link lands on the controls the operator was after.

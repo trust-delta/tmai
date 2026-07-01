@@ -78,10 +78,9 @@ export function App() {
   const [mainPanel, setMainPanel] = useState<"agents" | "settings">("agents");
   const [showHelp, setShowHelp] = useState(false);
   const showSettings = mainPanel === "settings";
-  // Phase B of the Producer-console rebuild
-  // (`doc/decisions/2026-05-14-react-producer-console-rebuild.md`)
-  // routes orchestrator-era controls behind a `<details>` section
-  // inside SettingsPanel. The flag below distinguishes:
+  // Post-inversion default (aim `producer-centric-project`): orchestrator-era
+  // controls are routed behind a `<details>` section inside SettingsPanel so
+  // the Producer-relevant sections show first. The flag below distinguishes:
   //
   // - regular Settings entry (StatusBar button / Ctrl+,) → Advanced
   //   stays collapsed; the Producer-relevant sections are what you
@@ -214,14 +213,12 @@ export function App() {
     dismissHandoff();
   }, [producerForUnit, dismissHandoff]);
 
-  // "Open Producer terminal" affordance from <ProducerConsole>.
+  // The "Open Producer terminal" affordance.
   //
-  // Decision `doc/decisions/2026-05-14-react-producer-console-rebuild.md`
-  // §Producer chat: the Producer conversation stays on the terminal
-  // substrate (substrate swap is rejected per cross-ref
-  // `tmai-core@2026-05-13-agent-view-does-not-replace-multiplexer-
-  // substrate`). The WebUI's job is just to make the canonical
-  // command trivially copy-pasteable.
+  // Per aim `cli-pty-server`: the Producer conversation stays on the terminal
+  // substrate (substrate swap is rejected — see aim `configurable-cli-substrate`).
+  // The WebUI's job is just to make the canonical command trivially
+  // copy-pasteable.
   //
   // `navigator.clipboard.writeText` requires a secure context;
   // `localhost` qualifies, so it works in dev. When the API isn't
