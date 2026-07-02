@@ -3,17 +3,16 @@
 //
 // `GET /api/slots` reflects only LIVE Producer slots — a project is *where a
 // Producer stood*, not a configured `[[unit]]` enumeration. Each slot carries
-// the same `name + repos` membership as `GET /api/units` (unit ≡ live Producer:
-// a slot is just presence — there is no lifecycle state, the homeostatic slot
-// invariant was retired). Where `useUnits` is the dormant-aware CONFIGURED
-// membership (and stays the source for agent→unit resolution + the legacy
-// unit-tab strip), this is the LIVE set the aim-console tabs read: a dormant
-// `[[unit]]` that has never launched a Producer is not a tab until its "+"
-// Add-unit launch stands one.
+// its `name + repos` membership (unit ≡ live Producer: a slot is just presence
+// — there is no lifecycle state, the homeostatic slot invariant was retired).
+// Since the config-unit rip (tmai-core #623) retired the dormant-aware
+// configured-unit enumeration (`/units`), this is the SOLE membership surface:
+// it drives the aim-console tabs, the active agent→unit resolution, and the
+// cross-unit digest. A dormant `[[unit]]` that has never launched a Producer is
+// not a tab until its "+" Add-unit launch stands one.
 //
-// Unlike the human-paced `useUnits` (config.toml edits, 60-second poll), slots
-// are live state — a Producer launch / crash / handoff changes the set — so a
-// shorter 10-second poll keeps a freshly-launched unit's tab appearing
+// Slots are live state — a Producer launch / crash / handoff changes the set —
+// so a short 10-second poll keeps a freshly-launched unit's tab appearing
 // promptly. The previous response stays visible during a re-fetch so the tab
 // strip does not flicker; `loading` reflects only the initial fetch.
 
@@ -35,8 +34,8 @@ export function useSlots(): UseSlotsResult {
 
   useEffect(() => {
     // One global live-slot list — no unit-scope discriminator that could swap
-    // mid-flight, so (like `useUnits`) the per-unit generation guard the
-    // unit-scoped hooks use isn't needed here.
+    // mid-flight, so the per-unit generation guard the unit-scoped hooks use
+    // isn't needed here.
     let cancelled = false;
 
     const fetchOnce = async () => {

@@ -2,19 +2,18 @@
 //
 // Aggregation tests for the Producer console's hand-over digest.
 //
-// We mock `useAgents`, `useWorktrees`, and `useUnits` directly so the
-// test exercises `useHandover`'s composition logic (project grouping,
-// attention filtering, state-pill derivation, cross-unit reconciliation)
-// without spinning up SSEProvider or hitting `api.units`.
+// We mock `useAgents` and `useWorktrees` directly so the test exercises
+// `useHandover`'s composition logic (project grouping, attention filtering,
+// state-pill derivation, live-agent-derived cross-unit set) without spinning
+// up SSEProvider.
 
 import { renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentSnapshot, UnitsResponse, WorktreeSnapshot } from "@/lib/api";
+import type { AgentSnapshot, WorktreeSnapshot } from "@/lib/api";
 import { useHandover } from "../useHandover";
 
 const useAgentsMock = vi.fn();
 const useWorktreesMock = vi.fn();
-const useUnitsMock = vi.fn();
 
 vi.mock("@/hooks/useAgents", () => ({
   useAgents: () => useAgentsMock(),
@@ -22,10 +21,6 @@ vi.mock("@/hooks/useAgents", () => ({
 
 vi.mock("@/hooks/useWorktrees", () => ({
   useWorktrees: () => useWorktreesMock(),
-}));
-
-vi.mock("@/hooks/useUnits", () => ({
-  useUnits: () => useUnitsMock(),
 }));
 
 function agent(partial: Partial<AgentSnapshot> & { id: string }): AgentSnapshot {
@@ -59,7 +54,6 @@ function agent(partial: Partial<AgentSnapshot> & { id: string }): AgentSnapshot 
 beforeEach(() => {
   useAgentsMock.mockReset();
   useWorktreesMock.mockReset();
-  useUnitsMock.mockReset();
   useAgentsMock.mockReturnValue({
     agents: [],
     attentionCount: 0,
@@ -70,13 +64,6 @@ beforeEach(() => {
     worktrees: [] as WorktreeSnapshot[],
     loading: false,
     refresh: vi.fn(),
-  });
-  // Default: no configured-unit membership loaded (wire pre-resolve).
-  // Tests that exercise reconciliation override this per-case.
-  useUnitsMock.mockReturnValue({
-    data: null,
-    loading: true,
-    error: null,
   });
 });
 
@@ -278,76 +265,6 @@ describe("useHandover — crossUnit derivation", () => {
     const { result } = renderHook(() => useHandover(null));
     expect(result.current.crossUnit.units).toHaveLength(1);
     expect(result.current.crossUnit.units[0]?.agentCount).toBe(2);
-  });
-});
-
-describe("useHandover — crossUnit reconciliation against api.units()", () => {
-  // tmai-core #460 closes the dormant-unit gap: configured `[[unit]]`
-  // tables that have no live agent must still appear in the cross-unit
-  // status section so the operator can SELECT them (and spawn a
-  // Producer at their primary repo). The state pill stays
-  // client-derived; reconciliation only adds rows, never alters them.
-
-  it("appends a configured unit with no live agents as state: quiet", () => {
-    useAgentsMock.mockReturnValue({
-      agents: [agent({ id: "a1", cwd: "/home/u/proj-a", git_common_dir: "/home/u/proj-a/.git" })],
-      attentionCount: 0,
-      loading: false,
-      refresh: vi.fn(),
-    });
-    const unitsData: UnitsResponse = {
-      units: [
-        // Live unit — already covered by `proj-a` live row.
-        { name: "proj-a", repos: [{ path: "/home/u/proj-a", primary: true }] },
-        // Dormant unit — must be reconciled in.
-        { name: "proj-dormant", repos: [{ path: "/home/u/proj-dormant", primary: true }] },
-      ],
-    };
-    useUnitsMock.mockReturnValue({ data: unitsData, loading: false, error: null });
-
-    const { result } = renderHook(() => useHandover(null));
-    const names = result.current.crossUnit.units.map((u) => u.name);
-    expect(names).toEqual(expect.arrayContaining(["proj-a", "proj-dormant"]));
-    const dormant = result.current.crossUnit.units.find((u) => u.name === "proj-dormant");
-    expect(dormant?.state).toBe("quiet");
-    expect(dormant?.agentCount).toBe(0);
-    expect(dormant?.attentionCount).toBe(0);
-    // Dormant row points at the unit's primary repo path so unit
-    // selection sets `currentProject` to the spawn-cwd target.
-    expect(dormant?.path).toBe("/home/u/proj-dormant");
-  });
-
-  it("does not duplicate a configured unit that already has live agents", () => {
-    useAgentsMock.mockReturnValue({
-      agents: [agent({ id: "a1", cwd: "/home/u/proj-a", git_common_dir: "/home/u/proj-a/.git" })],
-      attentionCount: 0,
-      loading: false,
-      refresh: vi.fn(),
-    });
-    const unitsData: UnitsResponse = {
-      units: [{ name: "proj-a", repos: [{ path: "/home/u/proj-a", primary: true }] }],
-    };
-    useUnitsMock.mockReturnValue({ data: unitsData, loading: false, error: null });
-
-    const { result } = renderHook(() => useHandover(null));
-    expect(result.current.crossUnit.units).toHaveLength(1);
-    expect(result.current.crossUnit.units[0]?.name).toBe("proj-a");
-    // Live row's state survives reconciliation (in-progress, not quiet).
-    expect(result.current.crossUnit.units[0]?.state).toBe("in-progress");
-  });
-
-  it("falls back to live-only rows while api.units() is still resolving", () => {
-    useAgentsMock.mockReturnValue({
-      agents: [agent({ id: "a1", cwd: "/home/u/proj-a", git_common_dir: "/home/u/proj-a/.git" })],
-      attentionCount: 0,
-      loading: false,
-      refresh: vi.fn(),
-    });
-    useUnitsMock.mockReturnValue({ data: null, loading: true, error: null });
-
-    const { result } = renderHook(() => useHandover(null));
-    expect(result.current.crossUnit.units).toHaveLength(1);
-    expect(result.current.crossUnit.units[0]?.name).toBe("proj-a");
   });
 });
 

@@ -18,14 +18,14 @@
 // can't be killed must not mask a successful close.
 
 import { type AgentSnapshot, api, isAiAgentLoose, normalizeGitDir } from "@/lib/api";
-import type { UnitResponse } from "@/types/generated/UnitResponse";
+import type { SlotResponse } from "@/types/generated/SlotResponse";
 
 // The webui-owned footer shells for a unit: plain (NON-AI) `bash` sessions
 // whose cwd is one of the unit's repos. `isAiAgentLoose` excludes the
 // bash-wrapped Producer and the workers (canonical `claude:`/`codex:`/… ids),
 // so this matches only the BashFooter's per-repo + ad-hoc shells — the same
 // normalized-cwd identity `BashFooter.findExistingBash` re-attaches on.
-export function findFooterShells(unit: UnitResponse, agents: AgentSnapshot[]): AgentSnapshot[] {
+export function findFooterShells(unit: SlotResponse, agents: AgentSnapshot[]): AgentSnapshot[] {
   const repoPaths = new Set(unit.repos.map((r) => normalizeGitDir(r.path)));
   return agents.filter((a) => !isAiAgentLoose(a) && repoPaths.has(normalizeGitDir(a.cwd)));
 }
@@ -33,7 +33,7 @@ export function findFooterShells(unit: UnitResponse, agents: AgentSnapshot[]): A
 // Close the unit's Producer slot, then kill its footer bash. Throws if the
 // core close itself fails (so the caller can surface it and skip the
 // footer-kill); footer-kill failures are swallowed (best-effort).
-export async function closeUnitSlot(unit: UnitResponse, agents: AgentSnapshot[]): Promise<void> {
+export async function closeUnitSlot(unit: SlotResponse, agents: AgentSnapshot[]): Promise<void> {
   await api.closeUnit(unit.name);
   const shells = findFooterShells(unit, agents);
   await Promise.allSettled(shells.map((a) => api.killAgent(a.target)));

@@ -13,15 +13,14 @@ import { useIdleNotification } from "@/hooks/useIdleNotification";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useNotificationConfig } from "@/hooks/useNotificationConfig";
 import { useSlots } from "@/hooks/useSlots";
-import { useUnits } from "@/hooks/useUnits";
 import { useWorktrees } from "@/hooks/useWorktrees";
 import {
   api,
   groupByProject,
   isAiAgentLoose,
   resolveUnitName,
+  type SlotResponse,
   setCallerCwd,
-  type UnitResponse,
 } from "@/lib/api";
 import { closeUnitSlot } from "@/lib/close-unit-slot";
 import { currentProjectBelongsToLiveProject } from "@/lib/current-project";
@@ -100,49 +99,43 @@ export function App() {
     setMainPanel("settings");
   }, []);
 
-  // Configured-unit membership (tmai-core #460 — wire half of #439). Read
-  // BEFORE `unitName` because the active unit is resolved by membership (see
-  // `resolveUnitName`), not the project-path basename. Also threaded into
-  // `findProducerForUnit` below so multi-repo units resolve their Producer
-  // against the primary repo specifically, not against whichever repo
-  // `currentProject` happens to point at. `useHandover` consumes the same wire
-  // for cross-unit reconciliation.
-  const { data: unitsData, loading: unitsLoading } = useUnits();
-
-  // Live Producer-slot set (tmai-core #580 — aim `producer-cwd`): the
-  // agent-primacy tab source for the aim console. Distinct from `useUnits`
-  // (configured `[[unit]]` membership, kept above for agent→unit resolution
-  // + the legacy unit-tab strip): `slotsData` reflects only units with a live
-  // Producer, so the aim-console tabs become "where a Producer stood" rather
-  // than the static config enumeration.
-  const { data: slotsData } = useSlots();
+  // Live Producer-slot set (tmai-core #580 — aim `producer-cwd`) — the
+  // agent-primacy tab source AND the sole unit→repo membership surface. Since
+  // the config-unit rip (tmai-core #623) retired the configured-unit
+  // enumeration (`/units`), `useSlots` is the one membership source: it drives
+  // the active `unitName` resolution (below), the multi-repo Producer
+  // resolution (`findProducerForUnit`), the aim-console tab strip, and
+  // `useHandover`'s cross-unit derivation. `unit ≡ live Producer`, so a unit
+  // surfaces here iff it has a live Producer — read BEFORE `unitName` because
+  // the active unit is resolved by membership, not the project-path basename.
+  const { data: slotsData, loading: slotsLoading } = useSlots();
 
   // The active unit NAME, fed to the unit-scoped wires (`GET
-  // /api/units/{unit}/…`). Anchored to the unit that OWNS `currentProject` in
-  // the configured `[[unit]]` membership — NOT the basename of the project
-  // path. A multi-repo unit's `currentProject` can resolve to a SECONDARY repo
-  // (e.g. `…/tmai-core`, basename "tmai-core") while the unit — and every
-  // agent's wire `unit` — is "tmai"; a basename derivation then mismatched the
+  // /api/units/{unit}/…`). Anchored to the slot that OWNS `currentProject` in
+  // the live membership — NOT the basename of the project path. A multi-repo
+  // unit's `currentProject` can resolve to a SECONDARY repo (e.g.
+  // `…/tmai-core`, basename "tmai-core") while the unit — and every agent's
+  // wire `unit` — is "tmai"; a basename derivation then mismatched the
   // SessionPane `agent.unit === unitName` filter and hid the unit's own agents
   // (the aim-console worker-invisibility bug). `resolveUnitName` falls back to
-  // the basename when no configured unit matches — the same cwd-synthesized-
-  // unit behaviour the backend's `resolve_unit_or_cwd` and the CLI give for an
+  // the basename when no live slot matches — the same cwd-synthesized-unit
+  // behaviour the backend's `resolve_unit_or_cwd` and the CLI give for an
   // unconfigured cwd.
   const unitName = useMemo(() => {
     // Hold while the membership wire is still loading: until it arrives we
     // cannot tell which unit owns `currentProject`, and resolving by basename
     // in the meantime would briefly mis-scope a multi-repo unit to its
-    // SECONDARY repo before units land. Once loading clears — even on fetch
+    // SECONDARY repo before slots land. Once loading clears — even on fetch
     // failure (`data` stays null) — we fall through to the basename, the same
     // as an unconfigured cwd.
-    if (unitsLoading) return null;
-    return resolveUnitName(currentProject, unitsData?.units ?? []);
-  }, [currentProject, unitsData, unitsLoading]);
+    if (slotsLoading) return null;
+    return resolveUnitName(currentProject, slotsData?.slots ?? []);
+  }, [currentProject, slotsData, slotsLoading]);
 
   const unitReposForCurrent = useMemo(() => {
     if (unitName === null) return null;
-    return unitsData?.units.find((u) => u.name === unitName)?.repos ?? null;
-  }, [unitsData, unitName]);
+    return slotsData?.slots.find((s) => s.name === unitName)?.repos ?? null;
+  }, [slotsData, unitName]);
 
   // ── Producer handoff-and-restart ritual (lifted to App level) ──
   //
@@ -353,7 +346,7 @@ export function App() {
   // `currentProject` carries — so we resolve that and reuse the existing
   // project re-scope. Falls back to the first repo if no `primary` flag.
   const handleSelectUnit = useCallback(
-    (unit: UnitResponse) => {
+    (unit: SlotResponse) => {
       const repo = unit.repos.find((r) => r.primary) ?? unit.repos[0];
       if (!repo) return;
       handleSelectProject(repo.path);
@@ -378,7 +371,7 @@ export function App() {
   // the engine can't attribute server-side. `agents` is the live roster used
   // to resolve those hint-less footer shells.
   const handleCloseUnit = useCallback(
-    async (unit: UnitResponse) => {
+    async (unit: SlotResponse) => {
       try {
         await closeUnitSlot(unit, agents);
         refresh();

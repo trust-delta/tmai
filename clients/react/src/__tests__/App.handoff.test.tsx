@@ -35,11 +35,8 @@ vi.mock("@/hooks/useWorktrees", () => ({
   useWorktrees: () => ({ worktrees: [], loading: false, refresh: vi.fn() }),
 }));
 // Loaded-empty membership: `unitName` then resolves by basename of the synthetic
-// `/p/...` paths these tests use (no configured `[[unit]]`). Must be
-// `loading: false` so App's units-load gate releases `unitName`.
-vi.mock("@/hooks/useUnits", () => ({
-  useUnits: () => ({ data: { units: [] }, loading: false, error: null }),
-}));
+// `/p/...` paths these tests use (no live slot). Must be `loading: false` so
+// App's slots-load gate releases `unitName`.
 vi.mock("@/hooks/useSlots", () => ({
   useSlots: () => ({ data: { slots: [] }, loading: false, error: null }),
 }));

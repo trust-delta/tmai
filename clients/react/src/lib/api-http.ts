@@ -37,9 +37,7 @@ import type { TerminalSubscription } from "@/types/generated/TerminalSubscriptio
 import type { UnitIssuesResponse } from "@/types/generated/UnitIssuesResponse";
 import type { UnitPrsResponse } from "@/types/generated/UnitPrsResponse";
 import type { UnitRepoWire } from "@/types/generated/UnitRepoWire";
-import type { UnitResponse } from "@/types/generated/UnitResponse";
 import type { UnitSlackResponse } from "@/types/generated/UnitSlackResponse";
-import type { UnitsResponse } from "@/types/generated/UnitsResponse";
 import type { Vendor } from "@/types/generated/Vendor";
 import type { WorkerDispatchMap } from "@/types/generated/WorkerDispatchMap";
 import type { WorkflowSnapshot } from "@/types/generated/WorkflowSnapshot";
@@ -79,9 +77,7 @@ export type {
   UnitIssuesResponse,
   UnitPrsResponse,
   UnitRepoWire,
-  UnitResponse,
   UnitSlackResponse,
-  UnitsResponse,
   Vendor,
   WorkerDispatchMap,
 };
@@ -400,17 +396,19 @@ export function normalizeGitDir(dir: string): string {
 // the `agent.unit === unitName` filter and drops out of its own unit's
 // SessionPane (the aim-console worker-invisibility bug).
 //
-// So match `currentProject` against the configured unit membership and return
-// the OWNING unit's name. Fall back to the path basename only when no
-// configured unit matches (a cwd-synthesized unit — the same behaviour the
-// engine/CLI give for an unconfigured cwd).
+// So match `currentProject` against the live Producer-slot membership and
+// return the OWNING slot's unit name. Fall back to the path basename only when
+// no live slot matches (a cwd-synthesized unit — the same behaviour the
+// engine/CLI give for an unconfigured cwd, and what any unit without a live
+// Producer collapses to since the configured-unit enumeration was retired,
+// tmai-core #623).
 export function resolveUnitName(
   currentProject: string | null,
-  units: UnitResponse[],
+  slots: SlotResponse[],
 ): string | null {
   if (!currentProject) return null;
   const norm = normalizeGitDir(currentProject);
-  const owning = units.find((u) =>
+  const owning = slots.find((u) =>
     u.repos.some((r) => {
       const repo = normalizeGitDir(r.path);
       // `currentProject` belongs to the unit when it is AT a repo, INSIDE a
@@ -1381,21 +1379,13 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  // Configured-unit membership (tmai-core #460, public mirror tmai#741).
-  // Membership-only — no live agent state is joined server-side; the
-  // WebUI reconciles configured units against the live agent list
-  // client-side to surface dormant units in the cross-unit list with a
-  // client-derived state pill.
-  units: () => apiFetch<UnitsResponse>("/units"),
-  unit: (name: string) => apiFetch<UnitResponse>(`/units/${encodeURIComponent(name)}`),
-
   // Live Producer-slot set (tmai-core #580 — aim producer-cwd) — the
-  // agent-primacy tab source: a project is *where a Producer stood*, not a
-  // configured `[[unit]]` enumeration. Unlike `/units` (dormant-aware
-  // membership), `/slots` reflects only live Producers (Occupied) plus the
-  // supervisor's transient Vacant / Halted states (Closed never surfaces),
-  // each carrying the same `name + repos` membership. The aim-console tab
-  // source reads this instead of `/units`.
+  // agent-primacy tab source AND the sole unit→repo membership surface since
+  // the config-unit rip (tmai-core #623) retired `/units` + `/units/{unit}`. A
+  // project is *where a Producer stood*, not a configured `[[unit]]`
+  // enumeration; `unit ≡ live Producer` (no lifecycle state), each slot
+  // carrying its `name + repos` membership. A dormant configured unit is not a
+  // slot until its "+" Add-unit launch stands a Producer.
   slots: () => apiFetch<SlotsResponse>("/slots"),
 
   // Hand-over batons (read-only) — the operator-side half of tmai-core PR
