@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import type { UnitResponse } from "@/types/generated/UnitResponse";
+import type { SlotResponse } from "@/types/generated/SlotResponse";
 import { resolveUnitName } from "../api-http";
 
 // The real multi-repo unit at the heart of the aim-console worker-
 // invisibility bug: the Producer runs at the wrapper `…/tmai`, the unit
 // "tmai" spans a primary repo (`…/tmai/tmai`, basename matches the unit name)
 // and a SECONDARY repo (`…/tmai/tmai-core`, basename "tmai-core" does NOT).
-const TMAI_UNIT: UnitResponse = {
+const TMAI_UNIT: SlotResponse = {
   name: "tmai",
   repos: [
     { path: "/home/u/works/tmai/tmai", primary: true },
@@ -59,7 +59,7 @@ describe("resolveUnitName", () => {
     // `…/tmai-core-extra` must NOT match the `…/tmai-core` repo — the boundary
     // check is on a full path segment (`norm === repo` or a `/`-delimited
     // prefix), not a bare string prefix.
-    const units: UnitResponse[] = [
+    const units: SlotResponse[] = [
       { name: "tmai", repos: [{ path: "/home/u/works/tmai/tmai-core", primary: true }] },
     ];
     expect(resolveUnitName("/home/u/works/tmai/tmai-core-extra", units)).toBe("tmai-core-extra");

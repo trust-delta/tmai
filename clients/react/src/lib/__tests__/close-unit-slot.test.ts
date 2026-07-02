@@ -6,7 +6,7 @@
 // engine can't attribute on its own.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentSnapshot, AgentType, UnitResponse } from "@/lib/api";
+import type { AgentSnapshot, AgentType, SlotResponse } from "@/lib/api";
 
 const closeUnitMock = vi.fn();
 const killAgentMock = vi.fn();
@@ -25,7 +25,7 @@ vi.mock("@/lib/api", async () => {
 
 import { closeUnitSlot, findFooterShells } from "@/lib/close-unit-slot";
 
-function unit(overrides: Partial<UnitResponse> = {}): UnitResponse {
+function unit(overrides: Partial<SlotResponse> = {}): SlotResponse {
   return {
     name: "tmai",
     repos: [

@@ -2,9 +2,9 @@
 import type { UnitRepoWire } from "./UnitRepoWire";
 
 /**
- * One live Producer slot: its unit→repo membership (same `name + repos` shape
- * as [`UnitResponse`](crate::api::units_view::UnitResponse), so the client
- * joins live agents identically). A slot exists iff a live Producer occupies
- * the locus — there is no separate lifecycle `state` (unit ≡ live Producer).
+ * One live Producer slot: its unit→repo membership (`name` + the
+ * [`UnitRepoWire`] rows, so the client joins live agents by `path`
+ * identically). A slot exists iff a live Producer occupies the locus — there
+ * is no separate lifecycle `state` (unit ≡ live Producer).
  */
 export type SlotResponse = { name: string, repos: Array<UnitRepoWire>, };

@@ -230,13 +230,9 @@ export const api = {
   unitSlack: (unit: string) => httpApi.unitSlack(unit),
   captureSlack: (unit: string, body: SlackCaptureRequest) => httpApi.captureSlack(unit, body),
 
-  // Configured-unit membership view (HTTP only — membership-only,
-  // no live agent state joined server-side; no Tauri-specific path needed)
-  units: () => httpApi.units(),
-  unit: (name: string) => httpApi.unit(name),
-
   // Live Producer-slot set (HTTP only — the agent-primacy aim-console tab
-  // source, tmai-core #580; no Tauri-specific path needed)
+  // source and sole unit→repo membership surface since tmai-core #623 retired
+  // `/units`; no Tauri-specific path needed)
   slots: () => httpApi.slots(),
 
   // Hand-over batons (HTTP only — read-only file-backed baton store, the

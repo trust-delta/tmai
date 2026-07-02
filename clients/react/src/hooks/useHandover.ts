@@ -8,16 +8,12 @@
 //   scoped to `currentProjectPath`. Reuses `groupByProject` so the
 //   sidebar's worktree shape matches the console's worktree shape
 //   exactly (single source of truth for project grouping).
-// - `crossUnit` — reconciles two sources so the section reflects the
-//   FULL configured-unit space, not only what's running:
-//     • configured-unit MEMBERSHIP comes from `api.units()` (tmai-core
-//       #460 wire half of #439, public types mirror tmai#741); membership
-//       only — no server-side state pill, no server-side live-agent join;
-//     • the per-unit STATE PILL (needs-you / in-progress / quiet) is
-//       still derived client-side from the live agent list.
-//   A unit configured but currently dormant (no live agent) shows up
-//   here with state `quiet`. Reconciliation closes the gap the Phase-A
-//   "live-agent derivation only" implementation left behind.
+// - `crossUnit` — the live-agent-derived unit set. `unit ≡ live Producer`
+//   (config-unit rip, tmai-core #623 retired the `api.units()` enumeration),
+//   so a unit surfaces here iff it has a live agent; the per-unit STATE PILL
+//   (needs-you / in-progress / quiet) is derived client-side from that live
+//   agent list. There is no dormant-membership reconciliation: a
+//   configured-but-never-launched unit no longer appears.
 //
 // Both compose-driven sections (`⬡ Settled decisions` and `◐ Working
 // with this human`) are wired directly to their own endpoints — the
@@ -27,14 +23,13 @@
 //
 // Posture annotation (DR `doc/decisions/2026-05-14-webui-simulated-
 // onboarded-posture.md`): the `noLiveAgents` flag survives — that
-// compensation is independent of the units wire and stays useful for
+// compensation is independent of the membership wire and stays useful for
 // the "agents-fetch pre-load" honest-degradation branch. The
-// `singleUnitOnly` companion is gone now that dormant configured units
-// are surfaced via reconciliation.
+// `singleUnitOnly` companion is gone — `unit ≡ live Producer`, so there is
+// no dormant multi-unit space for the cross-unit section to apologise for.
 
 import { useMemo } from "react";
 import { useAgents } from "@/hooks/useAgents";
-import { useUnits } from "@/hooks/useUnits";
 import { useWorktrees } from "@/hooks/useWorktrees";
 import {
   type AgentAttention,
@@ -101,10 +96,10 @@ export interface CrossUnitStatus {
  * absent — section components treat this as "may want to surface a
  * notice", not as definitive state.
  *
- * The `singleUnitOnly` flag this used to carry is retired: dormant
- * configured units are now surfaced via the `api.units()` reconciliation
- * in `crossUnit` (tmai-core #460), so there is no longer a multi-unit
- * gap for the cross-unit section to apologise for.
+ * The `singleUnitOnly` flag this used to carry is retired: `unit ≡ live
+ * Producer` (config-unit rip, tmai-core #623), so the cross-unit section is
+ * simply the live-agent-derived set — there is no dormant configured-unit
+ * space it could be a sliver of.
  */
 export interface MissingPreconditions {
   /** No live agents have been observed for this client session.
@@ -137,7 +132,6 @@ function deriveUnitState(group: ProjectGroup): UnitState {
 export function useHandover(currentProjectPath: string | null): HandoverDigest {
   const { agents } = useAgents();
   const { worktrees } = useWorktrees();
-  const { data: unitsData } = useUnits();
 
   const aiAgents = useMemo(() => agents.filter(isAiAgentLoose), [agents]);
 
@@ -180,8 +174,12 @@ export function useHandover(currentProjectPath: string | null): HandoverDigest {
   }, [currentProjectPath, projectGroups, aiAgents]);
 
   const crossUnit = useMemo<CrossUnitStatus>(() => {
-    // Live-agent-derived rows first — these carry real `state` /
-    // `agentCount` / `attentionCount` from the live snapshot.
+    // `unit ≡ live Producer` (config-unit rip, tmai-core #623): the cross-unit
+    // section is the live-agent-derived set — each row carries real `state` /
+    // `agentCount` / `attentionCount` from the live snapshot. A unit with no
+    // live agent no longer surfaces: the configured-unit enumeration wire
+    // (`api.units()`) that used to append dormant `quiet` rows was retired, so
+    // there is no dormant-membership reconciliation left to do.
     const liveRows: UnitStatus[] = projectGroups.map((g) => ({
       path: g.path,
       name: g.name,
@@ -189,52 +187,8 @@ export function useHandover(currentProjectPath: string | null): HandoverDigest {
       agentCount: g.totalAgents,
       attentionCount: g.attentionAgents,
     }));
-
-    // Reconcile against the configured-unit membership wire (tmai-core
-    // #460): any configured unit without a corresponding live-agent row
-    // is appended with state `quiet`. The membership row's `path` is the
-    // unit's PRIMARY repo (per `UnitRepoWire.primary`) so selecting a
-    // dormant row sets `currentProject` to the same path a fresh
-    // Producer launch would land at — keeps unit selection / spawn cwd
-    // / `findProducerForUnit` resolution all on the same path key.
-    if (!unitsData) {
-      // Wire not yet loaded — fall back to live-only. Reconciliation
-      // catches up on the next render once `useUnits` resolves.
-      return { units: liveRows };
-    }
-
-    // Match configured units against live rows by unit NAME — the
-    // grouping key in `groupByProject` is the agent's `unit` field
-    // (which is exactly the configured unit name) when present, and the
-    // primary repo's basename (which by convention equals the unit
-    // name) when not. Either way the `name` field on `liveRows`
-    // collides with the configured-unit name in the same-shape unit case.
-    const liveNames = new Set(liveRows.map((r) => r.name));
-
-    const dormantRows: UnitStatus[] = [];
-    for (const unit of unitsData.units) {
-      if (liveNames.has(unit.name)) continue;
-      const primary = unit.repos.find((r) => r.primary);
-      // No primary row on the wire → cannot pin a selection target.
-      // Drop the dormant entry rather than fabricate a path; the
-      // membership view always carries a primary in practice and a
-      // missing primary signals a wire-side bug we shouldn't paper over.
-      if (!primary) continue;
-      dormantRows.push({
-        path: primary.path,
-        name: unit.name,
-        state: "quiet",
-        agentCount: 0,
-        attentionCount: 0,
-      });
-    }
-
-    // Stable order: live rows in their existing order (preserves
-    // `groupByProject`'s name-sort), then dormant rows sorted by name
-    // so the section's reading order stays predictable across renders.
-    dormantRows.sort((a, b) => a.name.localeCompare(b.name));
-    return { units: [...liveRows, ...dormantRows] };
-  }, [projectGroups, unitsData]);
+    return { units: liveRows };
+  }, [projectGroups]);
 
   // Weak posture-signal derivation. `noLiveAgents` survives the units-
   // wire landing — it's still useful for the agents-fetch pre-load
