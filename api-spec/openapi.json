@@ -142,7 +142,7 @@
           "slots"
         ],
         "summary": "Documentation stub for `GET /api/slots`.",
-        "description": "The live Producer-slot set — the agent-primacy tab source. `unit ≡ live\nProducer`: reflects the live Producers, each carrying the same\n`name + repos` membership as `GET /api/units` (no lifecycle state — a slot\nis just presence). Real handler: `crate::web::api::get_slots`.",
+        "description": "The live Producer-slot set — the agent-primacy tab source and sole\nunit→repo membership surface (the configured-unit enumeration was retired in\nthe config-unit rip, #583 §1). `unit ≡ live Producer`: reflects the live\nProducers, each carrying its `name + repos` membership (no lifecycle state —\na slot is just presence). Real handler: `crate::web::api::get_slots`.",
         "operationId": "get_slots_doc",
         "responses": {
           "200": {
@@ -154,64 +154,6 @@
                 }
               }
             }
-          }
-        }
-      }
-    },
-    "/api/units": {
-      "get": {
-        "tags": [
-          "units"
-        ],
-        "summary": "Documentation stub for `GET /api/units`.",
-        "description": "Unit→repo membership (issue #439 — the Phase C WebUI wire #340 deferred):\nevery configured `[[unit]]` with its resolved repo list (name + repos +\nwhich repo is primary). Membership ONLY — no live agent state / attention /\nPR-CI / server-computed status pill; the client joins this with live agents\nto render one Producer-rooted tree per unit (producer-rooted-left-panel DR).\nReal handler: `crate::web::api::get_units`.",
-        "operationId": "get_units_doc",
-        "responses": {
-          "200": {
-            "description": "Every configured unit's repo membership",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnitsResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/units/{unit}": {
-      "get": {
-        "tags": [
-          "units"
-        ],
-        "summary": "Documentation stub for `GET /api/units/{unit}`.",
-        "description": "One configured unit's repo membership — the #340 item-4 shape. Resolved by\nname against the configured `[[unit]]`s only (not the cwd/worktree\nfallback the decisions / PR endpoints use), so an unknown unit ⇒ `404`.\nSame membership-only boundary as `GET /api/units`. Real handler:\n`crate::web::api::get_unit`.",
-        "operationId": "get_unit_doc",
-        "parameters": [
-          {
-            "name": "unit",
-            "in": "path",
-            "description": "Unit name (a configured `[[unit]]`)",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The unit's repo membership",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnitResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Unit not found"
           }
         }
       }
@@ -3105,7 +3047,7 @@
       },
       "SlotResponse": {
         "type": "object",
-        "description": "One live Producer slot: its unit→repo membership (same `name + repos` shape\nas [`UnitResponse`](crate::api::units_view::UnitResponse), so the client\njoins live agents identically). A slot exists iff a live Producer occupies\nthe locus — there is no separate lifecycle `state` (unit ≡ live Producer).",
+        "description": "One live Producer slot: its unit→repo membership (`name` + the\n[`UnitRepoWire`] rows, so the client joins live agents by `path`\nidentically). A slot exists iff a live Producer occupies the locus — there\nis no separate lifecycle `state` (unit ≡ live Producer).",
         "required": [
           "name",
           "repos"
@@ -3342,25 +3284,6 @@
           }
         }
       },
-      "UnitResponse": {
-        "type": "object",
-        "description": "`GET /api/units/{unit}` response — one unit's repo membership.\n\n`repos` is ordered **primary first, then declaration order** — the same\nconvention [`unit_repo_order`] gives the cross-repo PR view, so the two\nunit surfaces stay consistent. For a single-repo unit this collapses to\n`repos.len() == 1`.",
-        "required": [
-          "name",
-          "repos"
-        ],
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "repos": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/UnitRepoWire"
-            }
-          }
-        }
-      },
       "UnitSlackResponse": {
         "type": "object",
         "description": "`GET /api/units/{unit}/slack` response — the unit's slack ores across\nevery repo in `repos[]`, grouped per repo (primary first). Read on demand,\nno cache. For a single-repo unit this collapses to `repos.len() == 1`.",
@@ -3377,21 +3300,6 @@
           },
           "unit": {
             "type": "string"
-          }
-        }
-      },
-      "UnitsResponse": {
-        "type": "object",
-        "description": "`GET /api/units` response — every configured unit's membership.\n\nEmpty `units` when no `[[unit]]` is configured (the workbench then\noperates on a single cwd-synthesized unit, which is not enumerated here —\nthis surface reflects *configured* membership only).",
-        "required": [
-          "units"
-        ],
-        "properties": {
-          "units": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/UnitResponse"
-            }
           }
         }
       },
@@ -3633,12 +3541,8 @@
       "description": "Terminal-plane subscription tickets (#174 — UI ↔ PTY-server direct ANSI)"
     },
     {
-      "name": "units",
-      "description": "Unit→repo membership — configured units with their resolved repo list (issue #439, the Phase C wire deferred by #340). Membership only; the client joins with live agents to render one Producer-rooted tree per unit"
-    },
-    {
       "name": "slots",
-      "description": "Live Producer-slot set (aim producer-cwd) — the agent-primacy tab source: a project is where a Producer stood, not a configured [[unit]] enumeration. unit ≡ live Producer: GET /api/slots reflects the live Producers, each carrying the same name+repos membership as the units surface (no lifecycle state — a slot is just presence). The aim-console reads this instead of /units, so a dormant configured unit appears as a tab only once it launches a Producer."
+      "description": "Live Producer-slot set (aim producer-cwd) — the agent-primacy tab source AND the sole unit→repo membership surface since the config-unit rip (#583 §1) retired the configured-unit enumeration (GET /api/units + /api/units/{unit}, issue #439's Phase C wire). A project is where a Producer stood, not a configured [[unit]] enumeration. unit ≡ live Producer: GET /api/slots reflects the live Producers, each carrying its name + repos membership (no lifecycle state — a slot is just presence). A dormant configured unit appears as a tab only once it launches a Producer."
     },
     {
       "name": "aims",
