@@ -1616,7 +1616,7 @@
       "type": "object"
     },
     "SlotResponse": {
-      "description": "One live Producer slot: its unit→repo membership (same `name + repos` shape\nas [`UnitResponse`](crate::api::units_view::UnitResponse), so the client\njoins live agents identically). A slot exists iff a live Producer occupies\nthe locus — there is no separate lifecycle `state` (unit ≡ live Producer).",
+      "description": "One live Producer slot: its unit→repo membership (`name` + the\n[`UnitRepoWire`] rows, so the client joins live agents by `path`\nidentically). A slot exists iff a live Producer occupies the locus — there\nis no separate lifecycle `state` (unit ≡ live Producer).",
       "properties": {
         "name": {
           "type": "string"
@@ -1854,25 +1854,6 @@
       ],
       "type": "object"
     },
-    "UnitResponse": {
-      "description": "`GET /api/units/{unit}` response — one unit's repo membership.\n\n`repos` is ordered **primary first, then declaration order** — the same\nconvention [`unit_repo_order`] gives the cross-repo PR view, so the two\nunit surfaces stay consistent. For a single-repo unit this collapses to\n`repos.len() == 1`.",
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "repos": {
-          "items": {
-            "$ref": "#/$defs/UnitRepoWire"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "name",
-        "repos"
-      ],
-      "type": "object"
-    },
     "UnitSlackResponse": {
       "description": "`GET /api/units/{unit}/slack` response — the unit's slack ores across\nevery repo in `repos[]`, grouped per repo (primary first). Read on demand,\nno cache. For a single-repo unit this collapses to `repos.len() == 1`.",
       "properties": {
@@ -1889,21 +1870,6 @@
       "required": [
         "unit",
         "repos"
-      ],
-      "type": "object"
-    },
-    "UnitsResponse": {
-      "description": "`GET /api/units` response — every configured unit's membership.\n\nEmpty `units` when no `[[unit]]` is configured (the workbench then\noperates on a single cwd-synthesized unit, which is not enumerated here —\nthis surface reflects *configured* membership only).",
-      "properties": {
-        "units": {
-          "items": {
-            "$ref": "#/$defs/UnitResponse"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "units"
       ],
       "type": "object"
     },
