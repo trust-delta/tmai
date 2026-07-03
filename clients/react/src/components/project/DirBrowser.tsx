@@ -60,7 +60,7 @@ export function DirBrowser({ onSelect, onCancel, startPath, actionSlot }: DirBro
     // Backdrop
     <div
       role="dialog"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-background"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-[2px] animate-fade-in"
       onClick={onCancel}
       onKeyDown={(e) => {
         if (e.key === "Escape") onCancel();
@@ -70,7 +70,7 @@ export function DirBrowser({ onSelect, onCancel, startPath, actionSlot }: DirBro
       {/* biome-ignore lint/a11y/noStaticElementInteractions: stops click propagation to close backdrop */}
       <div
         role="presentation"
-        className="glass mx-4 flex w-full max-w-lg flex-col rounded-2xl border border-hairline-strong shadow-2xl"
+        className="mx-4 flex w-full max-w-lg flex-col rounded-xl border border-hairline-strong bg-background shadow-2xl animate-scale-in"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
       >
