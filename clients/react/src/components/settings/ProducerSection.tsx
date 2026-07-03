@@ -16,8 +16,8 @@ interface ProducerSectionProps {
 
 /**
  * Settings section that hosts the Producer agent's configuration:
- * scope (global vs per-project override), enabled toggle, and the composed
- * PR Monitor sub-section.
+ * scope (global vs per-project override) and the composed PR Monitor
+ * sub-section.
  *
  * Owns its own state (`orchestrator`, `orchScope`, `orchestratorSave`) and
  * load — the parent SettingsPanel does not need to refresh this section.
@@ -135,52 +135,14 @@ export function ProducerSection({ projects }: ProducerSectionProps) {
           />
         )}
 
-        {/* Enable toggle */}
-        <label className="flex items-center justify-between gap-3">
-          <div className="flex-1">
-            <span className="text-sm text-foreground">Enabled</span>
-            <p className="text-[11px] text-subtle-foreground mt-0.5">
-              Enable Producer workflow features.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              const next = !orchestrator.enabled;
-              setOrchestrator({ ...orchestrator, enabled: next });
-              void save.track(
-                async () => {
-                  await api.updateProducerSettings({ enabled: next }, orchProject);
-                  refreshOrchestrator();
-                },
-                { onError: () => setOrchestrator({ ...orchestrator, enabled: !next }) },
-              );
-            }}
-            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-              orchestrator.enabled ? "bg-primary/40" : "bg-surface-strong"
-            }`}
-            aria-label="Orchestrator enabled"
-          >
-            <span
-              className={`inline-block h-3.5 w-3.5 rounded-full transition-transform ${
-                orchestrator.enabled
-                  ? "translate-x-[18px] bg-primary"
-                  : "translate-x-0.5 bg-muted-foreground"
-              }`}
-            />
-          </button>
-        </label>
-
-        {orchestrator.enabled && (
-          <div className="space-y-3 border-t border-hairline pt-3">
-            <PrMonitorSection
-              orchestrator={orchestrator}
-              setOrchestrator={setOrchestrator}
-              orchProject={orchProject}
-              save={save}
-            />
-          </div>
-        )}
+        <div className="space-y-3 border-t border-hairline pt-3">
+          <PrMonitorSection
+            orchestrator={orchestrator}
+            setOrchestrator={setOrchestrator}
+            orchProject={orchProject}
+            save={save}
+          />
+        </div>
       </div>
     </section>
   );

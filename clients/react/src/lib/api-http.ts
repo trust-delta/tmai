@@ -895,7 +895,6 @@ export interface SpawnResponse {
 export type PrMonitorScope = "current_project" | "all";
 
 export interface ProducerSettings {
-  enabled: boolean;
   pr_monitor_enabled: boolean;
   pr_monitor_interval_secs: number;
   pr_monitor_exclude_authors: string[];
@@ -1254,7 +1253,6 @@ export const api = {
     ),
   updateProducerSettings: (
     params: {
-      enabled?: boolean;
       pr_monitor_enabled?: boolean;
       pr_monitor_interval_secs?: number;
       pr_monitor_exclude_authors?: string[];

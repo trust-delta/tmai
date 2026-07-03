@@ -24,7 +24,6 @@ const { ProducerSection } = await import("../ProducerSection");
  */
 function makeSettings(overrides: Partial<ProducerSettings> = {}): ProducerSettings {
   return {
-    enabled: true,
     pr_monitor_enabled: false,
     pr_monitor_interval_secs: 60,
     pr_monitor_exclude_authors: [],
