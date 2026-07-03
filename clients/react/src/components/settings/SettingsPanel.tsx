@@ -12,13 +12,10 @@ import { WorktreeSection } from "./WorktreeSection";
 
 interface SettingsPanelProps {
   onClose: () => void;
-  /** Post-inversion default (aim `producer-centric-project`): orchestrator-era
-   *  controls are collapsed behind an Advanced section.
-   *  When the operator arrives here from `ProducerConsoleActions`'
-   *  Operator-override panel, we want Advanced open by default so
-   *  the deep-link lands on the controls the operator was after.
-   *  Otherwise default-closed: the post-inversion default is to
-   *  let the Producer route work. */
+  /** The rarely-tuned automation settings live behind a collapsed Advanced
+   *  section. When the operator deep-links to a specific control, open
+   *  Advanced by default so they land on it without an extra click;
+   *  otherwise it stays collapsed. */
   defaultOpenAdvanced?: boolean;
 }
 
@@ -42,9 +39,9 @@ function GroupHeader({ label, description }: { label: string; description: strin
  * from currently active agents — used by `ProducerSection`'s per-project
  * override scope selector.
  *
- * Phase B layout: Producer-relevant sections sit at the top of the Core
- * group; orchestrator-era controls (spawn defaults, orchestration rules,
- * dispatch bundles, workflow engine, worktree ops) fall behind a
+ * Layout: the commonly-touched Producer settings sit at the top of the Core
+ * group; the automation the Producer relies on (PR/CI monitor spawning,
+ * worker-dispatch bundles, auto-rebase, worktree setup) falls behind a
  * `<details>`-backed Advanced expandable. The WebUI group is unchanged.
  */
 export function SettingsPanel({ onClose, defaultOpenAdvanced = false }: SettingsPanelProps) {
@@ -83,24 +80,23 @@ export function SettingsPanel({ onClose, defaultOpenAdvanced = false }: Settings
         <HandoffThresholdSection />
         <NotificationSection />
 
-        {/* Advanced — Phase B: orchestrator-era controls live here, off
-            the main flow but reachable. `<details>` is native /
-            keyboard-accessible; `open={defaultOpenAdvanced}` makes
-            the override-deep-link land with the section already
-            expanded so the operator doesn't have to click twice. */}
+        {/* Advanced: the automation the Producer relies on — tuned rarely,
+            so collapsed by default but reachable. `<details>` is native /
+            keyboard-accessible; `open={defaultOpenAdvanced}` lands a control
+            deep-link with the section already expanded. */}
         <details
           className="rounded-md border border-hairline bg-surface"
           open={defaultOpenAdvanced}
         >
           <summary className="cursor-pointer select-none px-4 py-3 text-sm text-foreground hover:bg-surface">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-warning/80">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-primary/80">
               Advanced
             </span>{" "}
-            — orchestrator-era controls
+            — automation & worker dispatch
             <p className="mt-1 text-xs font-normal normal-case tracking-normal text-muted-foreground">
-              These bypass the Producer (manual spawn defaults, orchestration rules, dispatch
-              bundles, workflow engine, worktree ops). The post-inversion default is to let the
-              Producer route work — open this only when you need to override directly.
+              Live automation the Producer relies on: PR/CI monitor spawning, worker-dispatch
+              permission bundles, auto-rebase on merge, and worktree setup. Tuned rarely — open to
+              adjust.
             </p>
           </summary>
           <div className="space-y-6 border-t border-hairline px-4 py-4">

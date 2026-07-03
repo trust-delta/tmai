@@ -28,7 +28,6 @@ vi.mock("@/lib/api", async () => {
 
 function orchestrator(threshold: number): ProducerSettings {
   return {
-    enabled: true,
     pr_monitor_enabled: false,
     pr_monitor_interval_secs: 60,
     pr_monitor_exclude_authors: [],
