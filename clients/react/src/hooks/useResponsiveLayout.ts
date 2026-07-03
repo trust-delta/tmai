@@ -47,11 +47,10 @@ export function useResponsiveLayout(): UseResponsiveLayoutResult {
       return true; // Auto-collapse on narrow screens
     }
     // Post-inversion default (aim `producer-centric-project`): the sidebar
-    // default flips to *collapsed* so the legacy AgentList stops
-    // being on the main flow. Existing operators are unaffected — their
+    // defaults to *collapsed* so it stays off the main flow — the aim console
+    // is the primary surface. Existing operators are unaffected: their
     // localStorage value (set by `toggleSidebar` on first use) keeps
-    // overriding the default. New / clean-state users land on the
-    // Producer console directly.
+    // overriding the default.
     return readStoredBool(STORAGE_KEY_SIDEBAR, true);
   });
 
