@@ -536,7 +536,7 @@ export function App() {
             className="absolute inset-0 bg-background/60 backdrop-blur-[2px] animate-fade-in"
             onClick={closeMainPanelOverlay}
           />
-          <div className="relative flex h-[85vh] w-[min(880px,92vw)] flex-col overflow-hidden rounded-xl border border-hairline-strong bg-surface-strong shadow-2xl animate-scale-in">
+          <div className="relative flex h-[85vh] w-[min(880px,92vw)] flex-col overflow-hidden rounded-xl border border-hairline-strong bg-background shadow-2xl animate-scale-in">
             <SettingsPanel
               onClose={closeMainPanelOverlay}
               defaultOpenAdvanced={settingsOpenedFromOverride}
