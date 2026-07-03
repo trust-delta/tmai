@@ -93,8 +93,7 @@ export function systemPrefersLight(): boolean {
 }
 
 // Subscribe to OS appearance changes (shaped for `useSyncExternalStore`).
-// No-op when matchMedia is unavailable. Uses the same `addEventListener`
-// pattern as `useResponsiveLayout`.
+// No-op when matchMedia is unavailable.
 export function subscribeSystemPrefersLight(onChange: () => void): () => void {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return () => {};
   const mql = window.matchMedia("(prefers-color-scheme: light)");
