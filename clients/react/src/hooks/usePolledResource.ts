@@ -1,7 +1,7 @@
-// Shared fetch/poll resource for the R-panel data hooks.
+// Shared fetch/poll resource for the per-unit data hooks.
 //
-// Every R-panel data hook (`useUnitInventory`, `useDecisions`, `usePrBody`,
-// `useIssueDetail`, …) was a hand-duplicated copy of the same shape: a
+// Every per-unit data hook (`useUnitAims`, `useUnitPrs`, `useUnitIssues`, …)
+// was a hand-duplicated copy of the same shape: a
 // `{ data, loading, error }` triple, a `generationRef` guard so a stale
 // in-flight response from a previously selected unit/PR never stamps over the
 // current one, a `null` dep that parks the hook, and (for the list hooks) a

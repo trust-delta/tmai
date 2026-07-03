@@ -49,7 +49,7 @@ interface GutterDragSpec {
    *  JS guard matters too: programmatic events (tests) bypass CSS hit-testing. */
   disabled?: boolean;
   /** Measure the panes at drag start. Return false to abort (degenerate
-   *  zero-size layout mid-mount — same guard useSplitPane carries). */
+   *  zero-size layout mid-mount). */
   onStart: (gutter: HTMLElement) => boolean;
   /** Apply the live value for a pointer delta (px along the axis) and return
    *  the readout chip text. */
@@ -116,7 +116,7 @@ function useGutterDrag({ axis, disabled, onStart, onMove, onEnd, onReset }: Gutt
     setRootDragging(gutter, false);
     onEnd();
     // Let xterm + other ResizeObserver users re-measure the settled tracks
-    // (the same convention as useSplitPane's drag end).
+    // (fire a resize on drag end).
     window.dispatchEvent(new Event("resize"));
   };
 

@@ -158,11 +158,10 @@ export type AgentAttention = "started" | "halted" | "completed";
 // user-blocked axis; `null` / absent means "running normally — no UI
 // signal needed". Centralized here (#583 §軸A) so the ≥5 surfaces that
 // used to recompute `a.attention != null` inline — the StatusBar count
-// (`useAgents`), the per-group count (`groupByProject`), the hand-over
-// digest's attention list (`useHandover`), and the AgentCard glow — all
-// read ONE definition and can never drift apart. A type guard so the
-// digest's `attentionAgents` map narrows `attention` to the non-null
-// `AgentAttention` without an inline non-null assertion.
+// (`useAgents`), the per-group count (`groupByProject`), and the other agent
+// attention surfaces — all read ONE definition and can never drift apart. A
+// type guard, so a caller narrows `attention` to the non-null `AgentAttention`
+// without an inline non-null assertion.
 export function hasAttention(
   agent: AgentSnapshot,
 ): agent is AgentSnapshot & { attention: AgentAttention } {

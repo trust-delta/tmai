@@ -14,8 +14,8 @@ import { type AgentSnapshot, normalizeGitDir, type UnitRepoWire } from "@/lib/ap
 // polish v4, the Producer is launched as `bash -c "tmai producer
 // <unit>"` so `agent_type` is `Custom("bash")` — but the canonical
 // `id` is still `claude:UUID` once the L2 promotion lands. We pin to
-// the id scheme rather than `agent_type` for the same reason
-// `useHandover` does.
+// the id scheme rather than `agent_type` because the scheme is the
+// stable identity across the bash-wrap indirection.
 export const PRODUCER_ID_SCHEME = "claude:";
 
 /** The parent directory of an absolute path, or `null` when it has no
@@ -31,7 +31,7 @@ function parentDir(path: string): string | null {
 
 /** Find the single live Producer for this unit, if any.
  *
- *  Filter rules (DR §E + scoping pattern from `useHandover`):
+ *  Filter rules (unit-scoped, Producer-identity based):
  *   1. `id` starts with `claude:` (canonical scheme)
  *   2. `!is_worktree` — Producer runs at the repo root (or the unit
  *      wrapper), not in a worktree clone (worktree Producers would be

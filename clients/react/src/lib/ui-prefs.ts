@@ -77,7 +77,7 @@ export interface UIPrefs {
   // (storage migration would be churn for no benefit).
   attentionStripCollapsed: boolean;
   // Persistent right-hand R panel width in px. Drag-resized via the
-  // shared useSplitPane drag engine; persisted here so the operator's
+  // shared Gutters drag engine; persisted here so the operator's
   // chosen width survives reloads / cross-tab. See clampAttentionStripWidth.
   attentionStripWidth: number;
   // Which R-panel accordion sections the operator has expanded. Default

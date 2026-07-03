@@ -104,8 +104,8 @@ export function App() {
   // the config-unit rip (tmai-core #623) retired the configured-unit
   // enumeration (`/units`), `useSlots` is the one membership source: it drives
   // the active `unitName` resolution (below), the multi-repo Producer
-  // resolution (`findProducerForUnit`), the aim-console tab strip, and
-  // `useHandover`'s cross-unit derivation. `unit ≡ live Producer`, so a unit
+  // resolution (`findProducerForUnit`) and the aim-console tab strip.
+  // `unit ≡ live Producer`, so a unit
   // surfaces here iff it has a live Producer — read BEFORE `unitName` because
   // the active unit is resolved by membership, not the project-path basename.
   const { data: slotsData, loading: slotsLoading } = useSlots();
