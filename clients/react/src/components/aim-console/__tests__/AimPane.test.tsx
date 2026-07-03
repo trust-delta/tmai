@@ -23,7 +23,6 @@ import type { AimWorkingDeltaWire } from "@/types/generated/AimWorkingDeltaWire"
 const aimsMock = vi.fn();
 const createAimMock = vi.fn();
 const editAimMock = vi.fn();
-const unitSlackMock = vi.fn();
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -34,7 +33,6 @@ vi.mock("@/lib/api", async () => {
       aims: (...args: unknown[]) => aimsMock(...args),
       createAim: (...args: unknown[]) => createAimMock(...args),
       editAim: (...args: unknown[]) => editAimMock(...args),
-      unitSlack: (...args: unknown[]) => unitSlackMock(...args),
     },
   };
 });
@@ -189,37 +187,13 @@ beforeEach(() => {
   aimsMock.mockReset();
   createAimMock.mockReset();
   editAimMock.mockReset();
-  unitSlackMock.mockReset();
-  // The SLACK face mounts (hidden) alongside the AIM face, so its hook always
-  // fetches — give it a benign default with ores present, so the no-badge
-  // assertion below is meaningful (a count WOULD have something to show).
-  unitSlackMock.mockResolvedValue({
-    unit: "u",
-    repos: [
-      {
-        repo_path: "/p/tmai-core",
-        repo_label: "tmai-core",
-        primary: true,
-        ores: [
-          {
-            ticket: "2026-06-11-120000",
-            captured_at: "2026-06-11T12:00:00",
-            body: "an ore",
-            quoted_by: [],
-          },
-        ],
-      },
-    ],
-  });
 });
 
 describe("AimPane — load + ledger", () => {
   it("parks with a placeholder + no fetch when no unit is focused", () => {
     renderPane(null);
-    // Both faces park with their own placeholder (#809) — pin the AIM one.
     expect(screen.getByText(/プロジェクトを選択すると aim が表示されます/)).toBeTruthy();
     expect(aimsMock).not.toHaveBeenCalled();
-    expect(unitSlackMock).not.toHaveBeenCalled();
   });
 
   it("surfaces a fetch error", async () => {
@@ -899,67 +873,5 @@ describe("AimPane — working_delta presence facts (#817)", () => {
     expect(ledger.textContent).toMatch(/1\s*drift/);
     expect(ledger.textContent).toMatch(/0\s*todo/);
     expect(ledger.textContent).toMatch(/0\s*done/);
-  });
-});
-
-describe("AimPane — [AIM | SLACK] faces (#809)", () => {
-  function faceEl(face: "aim" | "slack"): HTMLElement {
-    return screen.getByTestId(`aim-face-${face}`);
-  }
-
-  it("defaults to AIM; switching shows/hides the faces without unmounting AIM", async () => {
-    aimsMock.mockResolvedValue(responseStub());
-    renderPane();
-    await awaitLoaded();
-    expect(faceEl("aim").hidden).toBe(false);
-    expect(faceEl("slack").hidden).toBe(true);
-
-    fireEvent.click(screen.getByRole("button", { name: "SLACK" }));
-    expect(faceEl("aim").hidden).toBe(true);
-    expect(faceEl("slack").hidden).toBe(false);
-    // AIM content untouched while SLACK is active — hidden, NOT unmounted:
-    // the worklist rows are still there, state intact.
-    expect(within(faceEl("aim")).getAllByTestId("aim-row").length).toBeGreaterThan(0);
-    await waitFor(() =>
-      expect(within(faceEl("slack")).getAllByTestId("slack-ore").length).toBeGreaterThan(0),
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "AIM" }));
-    expect(faceEl("aim").hidden).toBe(false);
-    expect(faceEl("slack").hidden).toBe(true);
-    // A tab round-trip re-fetches NOTHING — both faces stayed mounted.
-    expect(aimsMock).toHaveBeenCalledTimes(1);
-    expect(unitSlackMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("AIM face state (selection) survives a SLACK detour", async () => {
-    aimsMock.mockResolvedValue(responseStub());
-    renderPane();
-    await awaitLoaded();
-    selectRow("amplify-human-judgment");
-    await screen.findByTestId("aim-inspector");
-
-    fireEvent.click(screen.getByRole("button", { name: "SLACK" }));
-    fireEvent.click(screen.getByRole("button", { name: "AIM" }));
-    // The inspector selection is exactly where it was left.
-    expect(screen.getByTestId("aim-inspector")).toBeTruthy();
-  });
-
-  it("tab labels carry NO badge / count — terrain, not a queue", async () => {
-    // The slack mock (beforeEach) returns 1 ore, so a counter WOULD have
-    // something to show; assert it never does.
-    aimsMock.mockResolvedValue(responseStub());
-    renderPane();
-    await awaitLoaded();
-    await waitFor(() =>
-      expect(within(faceEl("slack")).getAllByTestId("slack-ore").length).toBeGreaterThan(0),
-    );
-
-    const tabs = screen.getByTestId("aim-face-tabs");
-    expect(tabs.textContent).toBe("AIMSLACK");
-    const slackTab = screen.getByRole("button", { name: "SLACK" });
-    expect(slackTab.textContent).toBe("SLACK");
-    expect(slackTab.querySelector("*")).toBeNull();
-    expect(tabs.textContent).not.toMatch(/\d/);
   });
 });

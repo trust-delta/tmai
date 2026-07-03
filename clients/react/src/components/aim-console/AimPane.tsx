@@ -27,13 +27,13 @@
 // `aimMode` key RAimsSection uses); the expanded-branch set + the search filter
 // stay component-local (a persisted filter would silently hide rows next open).
 //
-// Stage B (issue #809) tab-izes the pane: `AimPane` is now a thin two-face
-// shell — an [AIM | SLACK] switch over the UNCHANGED aim worklist (`AimFace`,
-// the entire pre-existing pane) and the slack ore terrain (`SlackFace`).
-// "木の横、木の中でなく" — one panel, two faces. The selected face is local
-// UI state (default AIM on mount, deliberately NOT persisted in this stage),
-// and the tab labels are text only: the slack tab is terrain, not a queue —
-// NO counters, NO badges, ever.
+// The slack artifact was frozen (tmai-core aim `slack.md` → state: dead,
+// 2026-07-03): the producer conversation is the crystallization surface, so a
+// pre-purpose fragment has no dwell time and needs no holding place. The #809
+// two-face [AIM | SLACK] shell is therefore removed — `AimPane` renders the aim
+// worklist (`AimFace`) as the sole face. `AimFace` stays a named export (the
+// offline aim mode reuses it). Reversible: the slack aim's HISTORY carries the
+// un-freeze condition.
 
 import {
   type CSSProperties,
@@ -86,7 +86,6 @@ import {
   workingDeltaKind,
 } from "./aim-tree";
 import { RESIGNATION_FRONTIER, resignationInventory } from "./resignation";
-import { SlackFace } from "./SlackFace";
 import { suggestSlug, validateAimSlug } from "./slug";
 
 // ── tone → presentation (mark-only: only the wire-derived tone drives this) ──
@@ -118,49 +117,20 @@ const repoKey = (r: RepoAimsWire): string => `repo:${r.repo_root}`;
 
 const EMPTY_FORBIDDEN: ReadonlySet<string> = new Set<string>();
 
-// ── two-face shell — [AIM | SLACK] (Stage B, issue #809) ──────────────
-
-type PaneFace = "aim" | "slack";
+// ── AimPane — the aim worklist as the sole face (slack frozen) ─────────
+//
+// `.ac-face` is kept as the wrapper so `AimFace`'s header(flex:none)/list(flex:1)
+// layout gets the same flex-column context the #809 shell gave it.
 
 export function AimPane({ unitName }: { unitName: string | null }) {
-  const [face, setFace] = useState<PaneFace>("aim");
   return (
-    <>
-      {/* Labels are TEXT ONLY — the slack tab is terrain, not a queue: no
-          unread counter, no badge, no count may ever ride on it. */}
-      <div className="ac-ftabs" data-testid="aim-face-tabs">
-        <button
-          type="button"
-          className={cn("ac-ftab", face === "aim" && "on")}
-          aria-pressed={face === "aim"}
-          onClick={() => setFace("aim")}
-        >
-          AIM
-        </button>
-        <button
-          type="button"
-          className={cn("ac-ftab", face === "slack" && "on")}
-          aria-pressed={face === "slack"}
-          onClick={() => setFace("slack")}
-        >
-          SLACK
-        </button>
-      </div>
-      {/* Both faces stay MOUNTED — switching hides (`[hidden]`), never
-          unmounts, so the AIM face's local state (selection / expansion /
-          filter / open modal) survives a SLACK detour byte-identically and
-          neither face re-fetches on a tab flip. */}
-      <div className="ac-face" hidden={face !== "aim"} data-testid="aim-face-aim">
-        <AimFace unitName={unitName} />
-      </div>
-      <div className="ac-face" hidden={face !== "slack"} data-testid="aim-face-slack">
-        <SlackFace unitName={unitName} />
-      </div>
-    </>
+    <div className="ac-face">
+      <AimFace unitName={unitName} />
+    </div>
   );
 }
 
-// ── AIM face orchestrator (the pre-#809 pane, behaviour unchanged) ────
+// ── AIM face orchestrator ─────────────────────────────────────────────
 
 export function AimFace({ unitName }: { unitName: string | null }) {
   const { data, loading, error, refresh } = useUnitAims(unitName);
