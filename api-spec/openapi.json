@@ -108,7 +108,7 @@
           "producer"
         ],
         "summary": "Documentation stub for `POST /api/producer/launch` (by-path, #581).",
-        "description": "Engine-composed direct `claude` Producer launch, resolved BY PATH (supersedes\nthe #566 by-name `/api/units/{unit}/producer/launch`). The launch cwd DEFINES\nthe unit (aim `producer-cwd`): the `ProducerLaunchRequest` body carries the\npicked `path`, and the engine derives the unit via `Settings::unit_for_path`\n(the owning configured `[[unit]]`, else a `from_dir` synthesis) — so a\nbrand-new project root (the `+` Add-unit bootstrap) launches where by-name\nresolution 404'd. Runs the shared launch builder\n(`producer_cli::build_producer_launch` — compose + #541 readiness + boot file\n#373 + the exact `claude` argv, the SAME builder the terminal `tmai producer`\nCLI uses), then spawns `claude` DIRECTLY into a PTY with the\n`role=producer`/`unit`/`vendor=claude` hints at the spawn act — no bash-wrap /\ntmai-CLI chain. Honors the same capacity (503) + cwd-exists (400) guards as\n`/api/spawn`. The 200 body mirrors `/api/spawn`'s response:\n`{ session_id, pid (0), command (\"claude\"), dispatch_id }`. Real handler:\n`crate::web::api::launch_producer_at_path`.",
+        "description": "Engine-composed direct `claude` Producer launch, resolved BY PATH (supersedes\nthe #566 by-name `/api/units/{unit}/producer/launch`). The launch cwd DEFINES\nthe unit (aim `producer-cwd`): the `ProducerLaunchRequest` body carries the\npicked `path`, and the engine derives the unit via `Settings::unit_for_path`\n(the owning configured `[[unit]]`, else a `from_dir` synthesis) — so a\nbrand-new project root (the `+` Add-unit bootstrap) launches where by-name\nresolution 404'd. Runs the shared launch builder\n(`producer_cli::build_producer_launch` — compose + #541 readiness + boot file\n#373 + the exact `claude` argv, the SAME builder the terminal `tmai producer`\nCLI uses), then spawns `claude` DIRECTLY into a PTY with the\n`role=producer`/`unit`/`vendor=claude` hints at the spawn act — no bash-wrap /\ntmai-CLI chain. Honors the same cwd-exists (400) guard as\n`/api/spawn`. The 200 body mirrors `/api/spawn`'s response:\n`{ session_id, pid (0), command (\"claude\"), dispatch_id }`. Real handler:\n`crate::web::api::launch_producer_at_path`.",
         "operationId": "launch_producer_at_path_doc",
         "requestBody": {
           "content": {
@@ -131,7 +131,7 @@
             "description": "Compose / boot-file / spawn failed"
           },
           "503": {
-            "description": "Dispatch capacity exceeded, or PTY-server not connected"
+            "description": "PTY-server not connected"
           }
         }
       }
