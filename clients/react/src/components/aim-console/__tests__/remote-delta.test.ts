@@ -1,5 +1,5 @@
 // remote-delta — pure helpers for the remote-Δ freshness instrument (#822;
-// design: tmai-core doc/slack/2026-06-12-161334.md §3).
+// design: tmai-core doc/archive/slack/2026-06-12-161334.md §3).
 //
 // Pinned exclusions (operator-ratified): the cursor is CLIENT STATE ONLY —
 // it is never sent to any endpoint and the Producer never reads it; there

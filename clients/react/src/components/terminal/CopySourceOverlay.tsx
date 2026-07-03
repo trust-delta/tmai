@@ -9,7 +9,7 @@
 // DELIBERATE EXCLUSION — copy only, NO execute button: the operator's
 // paste + Enter stays the firing act. One-click execution of agent-authored
 // commands is the no-look-execution slide the design explicitly rejects
-// (tmai-core doc/slack/2026-06-12-163215.md); do not add a "run" affordance
+// (tmai-core doc/archive/slack/2026-06-12-163215.md); do not add a "run" affordance
 // here.
 
 import { useEffect, useRef, useState } from "react";
