@@ -1459,35 +1459,6 @@
       ],
       "type": "object"
     },
-    "RepoSlackWire": {
-      "description": "One repo's slack-ore slice. Repo tag fields follow\n[`super::pr_view::RepoPrsWire`] (`repo_path` / `repo_label` / `primary`).",
-      "properties": {
-        "ores": {
-          "description": "Every ore in this repo's `doc/slack/`, ascending by ticket (= capture\norder). Empty = the repo hasn't adopted slack (or holds none) — the\nnormal state, not an error. The wire stays neutral: list length is\nimplicit, and no unread/new marker exists by design.",
-          "items": {
-            "$ref": "#/$defs/SlackOreWire"
-          },
-          "type": "array"
-        },
-        "primary": {
-          "description": "`true` for the unit's primary repo (where the Producer is launched).",
-          "type": "boolean"
-        },
-        "repo_label": {
-          "type": "string"
-        },
-        "repo_path": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "repo_path",
-        "repo_label",
-        "primary",
-        "ores"
-      ],
-      "type": "object"
-    },
     "RetryHint": {
       "description": "Advisory retry guidance attached to a [`TmaiError`].\n\nThe hint is informational only — the caller decides whether to act on it.\nRetry orchestration is explicitly out of scope for v1 of the taxonomy.",
       "oneOf": [
@@ -1564,54 +1535,6 @@
       },
       "required": [
         "vendors"
-      ],
-      "type": "object"
-    },
-    "SlackCaptureRequest": {
-      "description": "`POST /api/units/{unit}/slack` request — capture one ore.\n\n**Capture is text only** (operator-ratified): no care-level, no category,\nno appraisal field of any kind. The server derives the ticket from the\ncapture time and writes `text` verbatim to\n`<repo_path>/doc/slack/<ticket>.md`. The writer is the operator via UI for\nnow — no MCP tool in this stage (§6d: agent 側残余は諦め inventory 管轄).",
-      "properties": {
-        "repo_path": {
-          "description": "Target repo — must be one of the unit's `repos[]` paths (the same\nspelling `RepoSlackWire::repo_path` serves; anything else is `422`,\nnever a write outside the unit).",
-          "type": "string"
-        },
-        "text": {
-          "description": "The ore's whole asserted content. Empty / whitespace-only is `422`.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "repo_path",
-        "text"
-      ],
-      "type": "object"
-    },
-    "SlackOreWire": {
-      "description": "One slack ore projected to the wire — the read complement of the internal\n[`crate::workbench::SlackRecord`].\n\n`quoted_by` is the **derived** quoted/unmined edge (never a stored field):\nthe same-repo aim slugs whose record text cites this ore's file\n([`crate::workbench::quoted_by`]). Empty = unmined. Both states are normal\n— an ore that never becomes an aim is正規 (§6c).",
-      "properties": {
-        "body": {
-          "description": "The raw text body — the entire ore file, verbatim. Capture is text\nonly: this is the ore's whole asserted content.",
-          "type": "string"
-        },
-        "captured_at": {
-          "description": "Capture time derived from the ticket (ISO-8601 seconds, no zone —\nthe ticket carries local capture time). Not a stored field.",
-          "type": "string"
-        },
-        "quoted_by": {
-          "description": "Slugs of the same-repo aims that quote this ore (derived on read,\nnever stored). Empty = unmined. `default` so a payload omitting it\nstill deserializes.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "ticket": {
-          "description": "Filename stem — the capture-timestamp parking ticket\n(`YYYY-MM-DD-HHMMSS`, optional `-N` collision suffix). A parking\nticket, not an identity: nothing references an ore by name until an\naim quotes it.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "ticket",
-        "captured_at",
-        "body"
       ],
       "type": "object"
     },
@@ -1851,25 +1774,6 @@
       "required": [
         "path",
         "primary"
-      ],
-      "type": "object"
-    },
-    "UnitSlackResponse": {
-      "description": "`GET /api/units/{unit}/slack` response — the unit's slack ores across\nevery repo in `repos[]`, grouped per repo (primary first). Read on demand,\nno cache. For a single-repo unit this collapses to `repos.len() == 1`.",
-      "properties": {
-        "repos": {
-          "items": {
-            "$ref": "#/$defs/RepoSlackWire"
-          },
-          "type": "array"
-        },
-        "unit": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "unit",
-        "repos"
       ],
       "type": "object"
     },
