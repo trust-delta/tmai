@@ -108,7 +108,7 @@
           "producer"
         ],
         "summary": "Documentation stub for `POST /api/producer/launch` (by-path, #581).",
-        "description": "Engine-composed direct `claude` Producer launch, resolved BY PATH (supersedes\nthe #566 by-name `/api/units/{unit}/producer/launch`). The launch cwd DEFINES\nthe unit (aim `producer-cwd`): the `ProducerLaunchRequest` body carries the\npicked `path`, and the engine derives the unit via `Settings::unit_for_path`\n(the owning configured `[[unit]]`, else a `from_dir` synthesis) — so a\nbrand-new project root (the `+` Add-unit bootstrap) launches where by-name\nresolution 404'd. Runs the shared launch builder\n(`producer_cli::build_producer_launch` — compose + #541 readiness + boot file\n#373 + the exact `claude` argv, the SAME builder the terminal `tmai producer`\nCLI uses), then spawns `claude` DIRECTLY into a PTY with the\n`role=producer`/`unit`/`vendor=claude` hints at the spawn act — no bash-wrap /\ntmai-CLI chain. Honors the same capacity (503) + cwd-exists (400) guards as\n`/api/spawn`. The 200 body mirrors `/api/spawn`'s response:\n`{ session_id, pid (0), command (\"claude\"), dispatch_id }`. Real handler:\n`crate::web::api::launch_producer_at_path`.",
+        "description": "Engine-composed direct `claude` Producer launch, resolved BY PATH (supersedes\nthe #566 by-name `/api/units/{unit}/producer/launch`). The launch cwd DEFINES\nthe unit (aim `producer-cwd`): the `ProducerLaunchRequest` body carries the\npicked `path`, and the engine derives the unit via `Settings::unit_for_path`\n(the owning configured `[[unit]]`, else a `from_dir` synthesis) — so a\nbrand-new project root (the `+` Add-unit bootstrap) launches where by-name\nresolution 404'd. Runs the shared launch builder\n(`producer_cli::build_producer_launch` — compose + #541 readiness + boot file\n#373 + the exact `claude` argv, the SAME builder the terminal `tmai producer`\nCLI uses), then spawns `claude` DIRECTLY into a PTY with the\n`role=producer`/`unit`/`vendor=claude` hints at the spawn act — no bash-wrap /\ntmai-CLI chain. Honors the same cwd-exists (400) guard as\n`/api/spawn`. The 200 body mirrors `/api/spawn`'s response:\n`{ session_id, pid (0), command (\"claude\"), dispatch_id }`. Real handler:\n`crate::web::api::launch_producer_at_path`.",
         "operationId": "launch_producer_at_path_doc",
         "requestBody": {
           "content": {
@@ -131,7 +131,7 @@
             "description": "Compose / boot-file / spawn failed"
           },
           "503": {
-            "description": "Dispatch capacity exceeded, or PTY-server not connected"
+            "description": "PTY-server not connected"
           }
         }
       }
@@ -559,95 +559,6 @@
           },
           "500": {
             "description": "PR listing failed for a repo (is gh authenticated?)"
-          }
-        }
-      }
-    },
-    "/api/units/{unit}/slack": {
-      "get": {
-        "tags": [
-          "slack"
-        ],
-        "summary": "Documentation stub for `GET /api/units/{unit}/slack`.",
-        "description": "The unit's slack ores (`doc/slack/`, the pre-crystallization aim-ore store\n— Stage A, issue #511) across every repo, grouped per repo (primary first,\nthe `UnitPrsResponse` convention). Each ore carries its parking ticket\n(`YYYY-MM-DD-HHMMSS`, optional `-N` collision suffix), the capture time\nderived from it, the raw text body, and the **derived** `quoted_by` edge —\nthe same-repo aim slugs whose record text cites the ore's filename\n(quoted/unmined is never a stored field; ore never crystallizes across\nrepos). A repo without `doc/slack/` yields an empty `ores` list — the\nnormal un-adopted state, not an error. Real handler:\n`crate::web::api::get_unit_slack`.",
-        "operationId": "get_unit_slack_doc",
-        "parameters": [
-          {
-            "name": "unit",
-            "in": "path",
-            "description": "Unit name (a configured `[[unit]]` or cwd-synthesized basename)",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Slack ores across the unit's repos, grouped per repo (primary first)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnitSlackResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Unit not found"
-          },
-          "500": {
-            "description": "Ore / aim read failed for a repo"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "slack"
-        ],
-        "summary": "Documentation stub for `POST /api/units/{unit}/slack`.",
-        "description": "Capture one slack ore: write `text` **verbatim** to\n`<repo_path>/doc/slack/<ticket>.md` (the directory is created on first\ncapture; the ticket is the capture timestamp, `-2`/`-3`/… on same-second\ncollision). Capture is text only — no care-level, no category, no\nappraisal field of any kind (operator-ratified). Empty / whitespace-only\ntext is `422`; a `repo_path` outside the unit's `repos[]` is `422` (never\na write outside the unit). Writer is the operator via UI for now — no MCP\ntool in this stage. Real handler: `crate::web::api::capture_slack_ore`.",
-        "operationId": "capture_slack_ore_doc",
-        "parameters": [
-          {
-            "name": "unit",
-            "in": "path",
-            "description": "Unit name (a configured `[[unit]]` or cwd-synthesized basename)",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SlackCaptureRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "The captured ore",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SlackOreWire"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Unit not found"
-          },
-          "422": {
-            "description": "Empty / whitespace-only text, or repo_path not in the unit"
-          },
-          "500": {
-            "description": "Write / re-parse failed"
           }
         }
       }
@@ -2889,35 +2800,6 @@
           }
         }
       },
-      "RepoSlackWire": {
-        "type": "object",
-        "description": "One repo's slack-ore slice. Repo tag fields follow\n[`super::pr_view::RepoPrsWire`] (`repo_path` / `repo_label` / `primary`).",
-        "required": [
-          "repo_path",
-          "repo_label",
-          "primary",
-          "ores"
-        ],
-        "properties": {
-          "ores": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SlackOreWire"
-            },
-            "description": "Every ore in this repo's `doc/slack/`, ascending by ticket (= capture\norder). Empty = the repo hasn't adopted slack (or holds none) — the\nnormal state, not an error. The wire stays neutral: list length is\nimplicit, and no unread/new marker exists by design."
-          },
-          "primary": {
-            "type": "boolean",
-            "description": "`true` for the unit's primary repo (where the Producer is launched)."
-          },
-          "repo_label": {
-            "type": "string"
-          },
-          "repo_path": {
-            "type": "string"
-          }
-        }
-      },
       "RetryHint": {
         "oneOf": [
           {
@@ -2994,54 +2876,6 @@
               "$ref": "#/components/schemas/VendorInfo"
             },
             "description": "Availability state of each tracked AI vendor."
-          }
-        }
-      },
-      "SlackCaptureRequest": {
-        "type": "object",
-        "description": "`POST /api/units/{unit}/slack` request — capture one ore.\n\n**Capture is text only** (operator-ratified): no care-level, no category,\nno appraisal field of any kind. The server derives the ticket from the\ncapture time and writes `text` verbatim to\n`<repo_path>/doc/slack/<ticket>.md`. The writer is the operator via UI for\nnow — no MCP tool in this stage (§6d: agent 側残余は諦め inventory 管轄).",
-        "required": [
-          "repo_path",
-          "text"
-        ],
-        "properties": {
-          "repo_path": {
-            "type": "string",
-            "description": "Target repo — must be one of the unit's `repos[]` paths (the same\nspelling `RepoSlackWire::repo_path` serves; anything else is `422`,\nnever a write outside the unit)."
-          },
-          "text": {
-            "type": "string",
-            "description": "The ore's whole asserted content. Empty / whitespace-only is `422`."
-          }
-        }
-      },
-      "SlackOreWire": {
-        "type": "object",
-        "description": "One slack ore projected to the wire — the read complement of the internal\n[`crate::workbench::SlackRecord`].\n\n`quoted_by` is the **derived** quoted/unmined edge (never a stored field):\nthe same-repo aim slugs whose record text cites this ore's file\n([`crate::workbench::quoted_by`]). Empty = unmined. Both states are normal\n— an ore that never becomes an aim is正規 (§6c).",
-        "required": [
-          "ticket",
-          "captured_at",
-          "body"
-        ],
-        "properties": {
-          "body": {
-            "type": "string",
-            "description": "The raw text body — the entire ore file, verbatim. Capture is text\nonly: this is the ore's whole asserted content."
-          },
-          "captured_at": {
-            "type": "string",
-            "description": "Capture time derived from the ticket (ISO-8601 seconds, no zone —\nthe ticket carries local capture time). Not a stored field."
-          },
-          "quoted_by": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Slugs of the same-repo aims that quote this ore (derived on read,\nnever stored). Empty = unmined. `default` so a payload omitting it\nstill deserializes."
-          },
-          "ticket": {
-            "type": "string",
-            "description": "Filename stem — the capture-timestamp parking ticket\n(`YYYY-MM-DD-HHMMSS`, optional `-N` collision suffix). A parking\nticket, not an identity: nothing references an ore by name until an\naim quotes it."
           }
         }
       },
@@ -3281,25 +3115,6 @@
           "primary": {
             "type": "boolean",
             "description": "`true` for the unit's primary repo (where the Producer is launched)."
-          }
-        }
-      },
-      "UnitSlackResponse": {
-        "type": "object",
-        "description": "`GET /api/units/{unit}/slack` response — the unit's slack ores across\nevery repo in `repos[]`, grouped per repo (primary first). Read on demand,\nno cache. For a single-repo unit this collapses to `repos.len() == 1`.",
-        "required": [
-          "unit",
-          "repos"
-        ],
-        "properties": {
-          "repos": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RepoSlackWire"
-            }
-          },
-          "unit": {
-            "type": "string"
           }
         }
       },
@@ -3547,10 +3362,6 @@
     {
       "name": "aims",
       "description": "Aims view — the aim-tree read surface (graduation Stage 1; observation 2026-06-05-aim-tree-write-first-record-structure). A recursive purpose=means tree of aim nodes (doc/aims/<slug>.md, NON-dated stable slugs) coexisting with decisions / approaches. Surfaces every record (slug / aim / parent / state: open|done|dead / depends_on|serves|related DAG edges / body) grouped per repo, carrying repo_root as the marker repoPath. Read-only; write/persist + drift-marks are later stages."
-    },
-    {
-      "name": "slack",
-      "description": "Slack-ore surface — per-repo doc/slack/ stores of pre-crystallization aim ore (結晶化前の aim の原石; Stage A, issue #511, incubator carrier 2026-06-11-recoil-loop-handoff §6b-6d). Read: every ore (ticket / captured_at / body / derived quoted_by) grouped per repo, primary first. Capture: text only — no appraisal field of any kind; quoted/unmined is derived from same-repo aim citations, never stored; the wire carries no unread notion."
     },
     {
       "name": "prs",
