@@ -11,7 +11,6 @@ import type {
   PrMergeMethod,
   PrMergeOverride,
   PrMonitorScope,
-  SlackCaptureRequest,
   SpawnRequest,
   TriggerHandoffRitualRequest,
   WorkerDispatchMap,
@@ -224,11 +223,6 @@ export const api = {
   // Unit-scoped cross-repo issue list — the issues peer of `unitPrs`
   // (HTTP only — gh-CLI passthrough fanned out over the unit's repos)
   unitIssues: (unit: string) => httpApi.unitIssues(unit),
-
-  // Unit-scoped slack-ore terrain + operator capture (HTTP only — file-backed
-  // doc/slack/ records served over the web API; no Tauri-specific path needed)
-  unitSlack: (unit: string) => httpApi.unitSlack(unit),
-  captureSlack: (unit: string, body: SlackCaptureRequest) => httpApi.captureSlack(unit, body),
 
   // Live Producer-slot set (HTTP only — the agent-primacy aim-console tab
   // source and sole unit→repo membership surface since tmai-core #623 retired
