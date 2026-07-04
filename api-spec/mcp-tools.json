@@ -364,6 +364,23 @@
     }
   },
   {
+    "description": "Get the unit's current-state bundle in one call: aim-tree nav + live agents + open PRs + open issues + open-todo backlog count. Unit-scoped, read-only — pull at boot or any 'where do things stand' moment.",
+    "name": "get_status",
+    "parameters_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "unit": {
+          "description": "Unit name — a configured `[[unit]]` (e.g. `tmai`, `tmai-product`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit"
+      ],
+      "type": "object"
+    }
+  },
+  {
     "description": "Get the conversation transcript of an agent",
     "name": "get_transcript",
     "parameters_schema": {
