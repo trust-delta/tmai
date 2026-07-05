@@ -23,6 +23,7 @@
 import { useMemo } from "react";
 import Markdown, { type Components, defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { CopyRefButton } from "./AimCopyRef";
 import {
   type AimBodySection,
   type AimBodySectionKind,
@@ -61,6 +62,9 @@ const sectionKey = (s: AimBodySection): string =>
 
 interface AimBodyProps {
   body: string;
+  /** The owning node's slug — the anchor a per-means-item copy button emits
+   *  (`[[slug]] <item text>`), so the operator can cite a specific todo. */
+  slug: string;
   /** Which surface's tokens to speak. */
   variant: AimBodyVariant;
   /** Does this slug name a loaded aim node (in the selection's repo)? */
@@ -69,7 +73,7 @@ interface AimBodyProps {
   onNavigate: (slug: string) => void;
 }
 
-export function AimBody({ body, variant, resolves, onNavigate }: AimBodyProps) {
+export function AimBody({ body, slug, variant, resolves, onNavigate }: AimBodyProps) {
   const sections = useMemo(() => parseAimBody(body), [body]);
 
   // An empty body renders nothing (a pure-ought node stays clean).
@@ -89,6 +93,7 @@ export function AimBody({ body, variant, resolves, onNavigate }: AimBodyProps) {
         <SectionView
           key={`lead-${sectionKey(s)}`}
           section={s}
+          slug={slug}
           variant={variant}
           resolves={resolves}
           onNavigate={onNavigate}
@@ -104,6 +109,7 @@ export function AimBody({ body, variant, resolves, onNavigate }: AimBodyProps) {
               <SectionView
                 key={sectionKey(s)}
                 section={s}
+                slug={slug}
                 variant={variant}
                 resolves={resolves}
                 onNavigate={onNavigate}
@@ -118,6 +124,7 @@ export function AimBody({ body, variant, resolves, onNavigate }: AimBodyProps) {
         <SectionView
           key={`prose-${sectionKey(s)}`}
           section={s}
+          slug={slug}
           variant={variant}
           resolves={resolves}
           onNavigate={onNavigate}
@@ -131,11 +138,13 @@ export function AimBody({ body, variant, resolves, onNavigate }: AimBodyProps) {
 
 function SectionView({
   section,
+  slug,
   variant,
   resolves,
   onNavigate,
 }: {
   section: AimBodySection;
+  slug: string;
   variant: AimBodyVariant;
   resolves: (slug: string) => boolean;
   onNavigate: (slug: string) => void;
@@ -160,7 +169,13 @@ function SectionView({
 
   const body =
     means !== null ? (
-      <MeansBody means={means} variant={variant} resolves={resolves} onNavigate={onNavigate} />
+      <MeansBody
+        means={means}
+        slug={slug}
+        variant={variant}
+        resolves={resolves}
+        onNavigate={onNavigate}
+      />
     ) : (
       <Md content={section.content} variant={variant} resolves={resolves} onNavigate={onNavigate} />
     );
@@ -200,11 +215,13 @@ function SectionView({
 
 function MeansBody({
   means,
+  slug,
   variant,
   resolves,
   onNavigate,
 }: {
   means: ParsedMeans;
+  slug: string;
   variant: AimBodyVariant;
   resolves: (slug: string) => boolean;
   onNavigate: (slug: string) => void;
@@ -220,6 +237,7 @@ function MeansBody({
           <MeansItemRow
             key={`${item.status ?? "·"}:${item.text}`}
             item={item}
+            slug={slug}
             variant={variant}
             resolves={resolves}
             onNavigate={onNavigate}
@@ -232,11 +250,13 @@ function MeansBody({
 
 function MeansItemRow({
   item,
+  slug,
   variant,
   resolves,
   onNavigate,
 }: {
   item: MeansItem;
+  slug: string;
   variant: AimBodyVariant;
   resolves: (slug: string) => boolean;
   onNavigate: (slug: string) => void;
@@ -274,6 +294,13 @@ function MeansItemRow({
             inline
           />
         </span>
+        {/* Cite THIS todo to the Producer: `[[slug]] <raw item text>`. The text
+            is the stable anchor (positions shift on edit), NOT the glyph/status. */}
+        <CopyRefButton
+          text={`[[${slug}]] ${item.text}`}
+          variant={variant}
+          label={`copy [[${slug}]] + todo reference`}
+        />
       </span>
       {item.detail !== "" && (
         <div className={variant === "console" ? "ac-means-detail" : "ml-4 text-subtle-foreground"}>

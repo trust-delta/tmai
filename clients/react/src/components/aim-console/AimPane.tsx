@@ -59,6 +59,7 @@ import type { AimState } from "@/types/generated/AimState";
 import type { AimWire } from "@/types/generated/AimWire";
 import type { RepoAimsWire } from "@/types/generated/RepoAimsWire";
 import { AimBody } from "./AimBody";
+import { CopyRefButton } from "./AimCopyRef";
 import {
   AIM_STATE_LABEL,
   type AimTone,
@@ -1066,6 +1067,14 @@ function Inspector({
             ) : (
               <span key={a.slug} className="ac-icrumb-cur">
                 {a.slug}
+                {/* Cite this aim node to the Producer: the bare `[[slug]]`
+                    wikilink, copied for hand-off (aim: operator-cites-aim). */}
+                <CopyRefButton
+                  text={`[[${a.slug}]]`}
+                  variant="console"
+                  label={`copy [[${a.slug}]] reference`}
+                  testId="aim-copy-slug"
+                />
               </span>
             ),
           )}
@@ -1103,6 +1112,7 @@ function Inspector({
 
         <AimBody
           body={node.body}
+          slug={node.slug}
           variant="console"
           resolves={(slug) => bySlug.has(slug)}
           onNavigate={onSelectAncestor}
