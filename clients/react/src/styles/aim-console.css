@@ -2146,6 +2146,31 @@
   border-bottom: none;
   cursor: default;
 }
+/* copy-reference affordance (aim: operator-cites-aim) — an unobtrusive glyph
+   button that copies a `[[slug]]` / `[[slug]] <todo>` POINTER for the operator
+   to hand the Producer. Faint until hovered; a brief ✓ (green) on copy. */
+.aim-console .ac-copyref {
+  flex: none;
+  margin-left: 4px;
+  padding: 0 3px;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--faint);
+  opacity: 0.7;
+}
+.aim-console .ac-copyref:hover {
+  color: var(--cyan);
+  opacity: 1;
+}
+.aim-console .ac-copyref[data-copied="true"] {
+  color: var(--green);
+  opacity: 1;
+}
 /* 手段 (means) — a progress-bearing checklist. Each item carries a status
    glyph (✓ 実装済 / ◌ 未実装 / · plain); the section header carries a done/todo
    ratio + a thin bar. done = green (calm), todo = ochre (owed, not alarming). */

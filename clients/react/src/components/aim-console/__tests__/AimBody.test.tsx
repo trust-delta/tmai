@@ -4,15 +4,23 @@
 // sections. Covers: the canonical is/障害/手段/DAG/history scaffold (reading
 // order + empty slots); the 手段 progress checklist (status glyphs + done/todo
 // ratio); `[[slug]]` cross-edges (clickable when resolved, plain when not); a
-// pure-prose body skipping the scaffold; an empty body rendering nothing.
+// pure-prose body skipping the scaffold; an empty body rendering nothing; and
+// the per-means-item copy-reference button (aim: operator-cites-aim).
 
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AimBody } from "../AimBody";
 
 const all = () => true;
 const none = () => false;
 const noop = () => {};
+
+// Clipboard mock — jsdom has no `navigator.clipboard`; mirror CopySourceOverlay.
+const writeText = vi.fn<(s: string) => Promise<void>>().mockResolvedValue(undefined);
+beforeEach(() => {
+  writeText.mockClear();
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+});
 
 const DRIFT_BODY = [
   "# is — 前提",
@@ -33,7 +41,15 @@ const DRIFT_BODY = [
 
 describe("AimBody", () => {
   it("renders sections in canonical order with empty slots (rpanel)", () => {
-    render(<AimBody body={DRIFT_BODY} variant="rpanel" resolves={all} onNavigate={noop} />);
+    render(
+      <AimBody
+        body={DRIFT_BODY}
+        slug="drift-surfacing"
+        variant="rpanel"
+        resolves={all}
+        onNavigate={noop}
+      />,
+    );
     const sections = screen.getAllByTestId("aim-body-section");
     expect(sections.map((s) => s.getAttribute("data-kind"))).toEqual([
       "is",
@@ -50,7 +66,15 @@ describe("AimBody", () => {
   });
 
   it("renders 手段 as a progress checklist with a done/todo ratio", () => {
-    render(<AimBody body={DRIFT_BODY} variant="rpanel" resolves={all} onNavigate={noop} />);
+    render(
+      <AimBody
+        body={DRIFT_BODY}
+        slug="drift-surfacing"
+        variant="rpanel"
+        resolves={all}
+        onNavigate={noop}
+      />,
+    );
     expect(screen.getByTestId("aim-means-progress").textContent).toContain("done 1 / todo 1");
     const items = screen.getAllByTestId("aim-means-item");
     expect(items.map((i) => i.getAttribute("data-status"))).toEqual(["todo", "done"]);
@@ -62,6 +86,7 @@ describe("AimBody", () => {
     render(
       <AimBody
         body={"# 手段\n\nfoo（means・未実装）\n\n- a detail bullet"}
+        slug="x"
         variant="rpanel"
         resolves={all}
         onNavigate={noop}
@@ -77,6 +102,7 @@ describe("AimBody", () => {
     render(
       <AimBody
         body={"# DAG\n\n- 依存 [[git-local-fact-source]]"}
+        slug="x"
         variant="rpanel"
         resolves={all}
         onNavigate={onNavigate}
@@ -90,6 +116,7 @@ describe("AimBody", () => {
     render(
       <AimBody
         body={"# DAG\n\n- [[not-yet-authored]]"}
+        slug="x"
         variant="rpanel"
         resolves={none}
         onNavigate={noop}
@@ -103,6 +130,7 @@ describe("AimBody", () => {
     render(
       <AimBody
         body={"just a note, no headings"}
+        slug="x"
         variant="rpanel"
         resolves={all}
         onNavigate={noop}
@@ -113,7 +141,15 @@ describe("AimBody", () => {
   });
 
   it("renders the console variant's sections", () => {
-    render(<AimBody body={DRIFT_BODY} variant="console" resolves={all} onNavigate={noop} />);
+    render(
+      <AimBody
+        body={DRIFT_BODY}
+        slug="drift-surfacing"
+        variant="console"
+        resolves={all}
+        onNavigate={noop}
+      />,
+    );
     const sections = screen.getAllByTestId("aim-body-section");
     expect(sections.some((s) => s.getAttribute("data-kind") === "means")).toBe(true);
     expect(screen.getByTestId("aim-means-progress").textContent).toContain("done 1 / todo 1");
@@ -121,9 +157,62 @@ describe("AimBody", () => {
 
   it("renders nothing for an empty / whitespace-only body", () => {
     const { container } = render(
-      <AimBody body={"   \n  "} variant="rpanel" resolves={all} onNavigate={noop} />,
+      <AimBody body={"   \n  "} slug="x" variant="rpanel" resolves={all} onNavigate={noop} />,
     );
     expect(container.innerHTML).toBe("");
     expect(screen.queryByTestId("aim-body")).toBeNull();
+  });
+
+  // ── per-means-item copy reference (aim: operator-cites-aim) ────────────────
+  describe("means-item copy reference", () => {
+    it("copies `[[slug]] <item text>` — the anchor + a space + the raw text", () => {
+      render(
+        <AimBody
+          body={DRIFT_BODY}
+          slug="drift-surfacing"
+          variant="console"
+          resolves={all}
+          onNavigate={noop}
+        />,
+      );
+      const items = screen.getAllByTestId("aim-means-item");
+      // items[0] = the [未実装] within-node item.
+      fireEvent.click(within(items[0]).getByTestId("aim-copy-ref"));
+      expect(writeText).toHaveBeenCalledWith(
+        "[[drift-surfacing]] within-node: aim 行 ts vs body ts",
+      );
+    });
+
+    it("copies the RAW item text — no glyph / status marker", () => {
+      render(
+        <AimBody
+          body={DRIFT_BODY}
+          slug="drift-surfacing"
+          variant="console"
+          resolves={all}
+          onNavigate={noop}
+        />,
+      );
+      const items = screen.getAllByTestId("aim-means-item");
+      // items[1] = the [実装済] item; the payload carries neither ✓ nor 実装済.
+      fireEvent.click(within(items[1]).getByTestId("aim-copy-ref"));
+      expect(writeText).toHaveBeenCalledWith("[[drift-surfacing]] 既存 parser split_frontmatter");
+    });
+
+    it("gives each means item its own copy button (rpanel variant too)", () => {
+      render(
+        <AimBody
+          body={DRIFT_BODY}
+          slug="drift-surfacing"
+          variant="rpanel"
+          resolves={all}
+          onNavigate={noop}
+        />,
+      );
+      const items = screen.getAllByTestId("aim-means-item");
+      for (const item of items) {
+        expect(within(item).getByTestId("aim-copy-ref")).toBeTruthy();
+      }
+    });
   });
 });

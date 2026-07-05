@@ -23,6 +23,8 @@ import type { AimWorkingDeltaWire } from "@/types/generated/AimWorkingDeltaWire"
 const aimsMock = vi.fn();
 const createAimMock = vi.fn();
 const editAimMock = vi.fn();
+// Clipboard mock for the copy-reference buttons (jsdom has no navigator.clipboard).
+const writeText = vi.fn<(s: string) => Promise<void>>().mockResolvedValue(undefined);
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -187,6 +189,8 @@ beforeEach(() => {
   aimsMock.mockReset();
   createAimMock.mockReset();
   editAimMock.mockReset();
+  writeText.mockClear();
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
 });
 
 describe("AimPane — load + ledger", () => {
@@ -339,6 +343,35 @@ describe("AimPane — inspector", () => {
     await waitFor(() =>
       expect(screen.getByTestId("aim-inspector").textContent).toContain("amplify judgment"),
     );
+  });
+});
+
+describe("AimPane — copy reference (aim: operator-cites-aim)", () => {
+  it("the slug-head button copies the bare `[[slug]]` pointer", async () => {
+    aimsMock.mockResolvedValue(responseStub());
+    renderPane();
+    await awaitLoaded();
+    // Tree mode so the calm (non-owed) aim-system is reachable.
+    fireEvent.click(screen.getByRole("button", { name: "Tree" }));
+    selectRow("aim-system");
+
+    const insp = await screen.findByTestId("aim-inspector");
+    fireEvent.click(within(insp).getByTestId("aim-copy-slug"));
+    expect(writeText).toHaveBeenCalledWith("[[aim-system]]");
+  });
+
+  it("a PROCESS todo button copies `[[slug]] <item text>`", async () => {
+    aimsMock.mockResolvedValue(responseStub());
+    renderPane();
+    await awaitLoaded();
+    // amplify-human-judgment is owed (todo) → selectable in the default Frontier
+    // view; its body PROCESS carries one `- [todo] todo 0` item.
+    selectRow("amplify-human-judgment");
+
+    const insp = await screen.findByTestId("aim-inspector");
+    const item = within(insp).getAllByTestId("aim-means-item")[0];
+    fireEvent.click(within(item).getByTestId("aim-copy-ref"));
+    expect(writeText).toHaveBeenCalledWith("[[amplify-human-judgment]] todo 0");
   });
 });
 
