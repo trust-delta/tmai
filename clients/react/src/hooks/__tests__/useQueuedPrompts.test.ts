@@ -24,8 +24,8 @@ import { api } from "@/lib/api";
 import { useQueuedPrompts } from "../useQueuedPrompts";
 
 const ITEMS: QueuedPrompt[] = [
-  { id: "1", prompt: "hello world", queued_at: "2026-04-20T10:00:00Z" },
-  { id: "2", prompt: "do something", queued_at: "2026-04-20T10:00:01Z" },
+  { id: "1", prompt: "hello world", queued_at: "2026-04-20T10:00:00Z", origin: null },
+  { id: "2", prompt: "do something", queued_at: "2026-04-20T10:00:01Z", origin: null },
 ];
 
 describe("useQueuedPrompts", () => {

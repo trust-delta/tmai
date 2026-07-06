@@ -1,8 +1,10 @@
 // Browser notification when agents transition from Processing to Idle/Stopped.
 //
-// - Hook-based detection (HttpHook): stop event is definitive, notify immediately
-// - IPC/WebSocket detection: reliable, short threshold is safe
-// - capture-pane detection: subject to flicker, full threshold required
+// Delay tiers by `detection_source` (snake_case wire enum, see
+// `@/types/generated/DetectionSource`):
+// - `http_hook`: stop hook is definitive, notify immediately
+// - `web_socket`: reliable channel, short capped threshold is safe
+// - `pty_server`: terminal-observation detection can flicker, full threshold
 //
 // Uses the Notification API so notifications appear even when the tab is in the background.
 
@@ -23,17 +25,23 @@ interface AgentIdleState {
   notified: boolean;
 }
 
-/// Determine the notification delay based on detection source
+/// Determine the notification delay based on detection source.
+///
+/// The wire enum is snake_case (`@/types/generated/DetectionSource`). The
+/// retired PascalCase hand-mirror meant none of these cases ever matched at
+/// runtime, so every agent silently fell through to the full-threshold
+/// default — the hook-immediate (0ms) and short-threshold tiers never fired.
 function getDelay(source: DetectionSource, thresholdSecs: number): number {
   switch (source) {
-    // Hook-based: stop event is definitive
-    case "HttpHook":
+    // Hook-based: stop event is definitive — highest fidelity, notify at once.
+    case "http_hook":
       return 0;
-    // IPC / WebSocket: reliable, use a short threshold
-    case "IpcSocket":
-    case "WebSocket":
+    // WebSocket channel: structured and reliable, so a short capped threshold
+    // debounces transient states without noticeable lag.
+    case "web_socket":
       return Math.min(thresholdSecs * 1000, 2000);
-    // capture-pane and others: subject to flicker, full threshold
+    // `pty_server` (and any future source): terminal-observation detection can
+    // flicker, so wait the full threshold before notifying.
     default:
       return thresholdSecs * 1000;
   }
