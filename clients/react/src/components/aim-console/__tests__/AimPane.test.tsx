@@ -908,3 +908,105 @@ describe("AimPane — working_delta presence facts (#817)", () => {
     expect(ledger.textContent).toMatch(/0\s*done/);
   });
 });
+
+describe("AimPane — cross-edge inspector (aim: aim-cross-edge-link)", () => {
+  // A forest whose bodies carry `[[slug]]` DAG links, spanning both repos:
+  //   tmai-core:  xe-a  (root) → body links [[xe-b]] + [[xe-ghost]] (dangling)
+  //               xe-b  (child of xe-a) — no links; referenced by xe-a AND xe-c
+  //               xe-iso (root) — no links, unreferenced (isolated)
+  //   tmai:       xe-c  (root) → body links [[xe-b]] (a CROSS-REPO edge)
+  const XCORE: AimWire[] = [
+    aimStub({
+      slug: "xe-a",
+      aim: "the a bearing",
+      body: "# DAG\n- 依存: [[xe-b]] — leans on b\n- 関連: [[xe-ghost]] — a missing target",
+    }),
+    aimStub({ slug: "xe-b", aim: "the b bearing", parent: "xe-a" }),
+    aimStub({ slug: "xe-iso", aim: "the isolated bearing" }),
+  ];
+  const XUI: AimWire[] = [
+    aimStub({ slug: "xe-c", aim: "the c bearing", body: "# IS\nbuilds on [[xe-b]] here." }),
+  ];
+  const xResponse = () =>
+    responseStub([
+      { label: "tmai-core", primary: true, aims: XCORE },
+      { label: "tmai", primary: false, aims: XUI },
+    ]);
+
+  // The cross-edge section, scoped to the open inspector.
+  function xedge(): HTMLElement {
+    const insp = screen.getByTestId("aim-inspector");
+    return within(insp).getByTestId("aim-cross-edges");
+  }
+  const slugsIn = (dir: "out" | "in"): string[] =>
+    Array.from(xedge().querySelectorAll(`[data-testid="aim-cross-${dir}"] [data-slug]`)).map(
+      (el) => (el as HTMLElement).dataset.slug ?? "",
+    );
+
+  async function selectInTree(slug: string) {
+    fireEvent.click(screen.getByRole("button", { name: "Tree" }));
+    selectRow(slug);
+    await screen.findByTestId("aim-inspector");
+  }
+
+  it("outbound lists the body's `[[slug]]` links; a dangling target shows dim + non-navigable", async () => {
+    aimsMock.mockResolvedValue(xResponse());
+    renderPane();
+    await awaitLoaded();
+    await selectInTree("xe-a");
+
+    const out = within(xedge()).getByTestId("aim-cross-out");
+    expect(out.dataset.count).toBe("2");
+    expect(slugsIn("out")).toEqual(["xe-b", "xe-ghost"]);
+
+    // The resolved target is a navigable button carrying the target's ought as title.
+    const bChip = out.querySelector('[data-slug="xe-b"]') as HTMLElement;
+    expect(bChip.tagName).toBe("BUTTON");
+    expect(bChip.getAttribute("title")).toBe("the b bearing");
+    // The dangling target is a non-button span, marked, surfaced not dropped.
+    const ghost = out.querySelector('[data-slug="xe-ghost"]') as HTMLElement;
+    expect(ghost.tagName).toBe("SPAN");
+    expect(ghost.dataset.dangling).toBe("true");
+
+    // xe-a is referenced by nobody → inbound is an explicit "none".
+    const inb = within(xedge()).getByTestId("aim-cross-in");
+    expect(inb.dataset.count).toBe("0");
+    expect(inb.textContent).toContain("なし");
+  });
+
+  it("inbound lists who references the node — across the repo boundary", async () => {
+    aimsMock.mockResolvedValue(xResponse());
+    renderPane();
+    await awaitLoaded();
+    await selectInTree("xe-b");
+
+    // xe-b links to nothing…
+    expect(within(xedge()).getByTestId("aim-cross-out").dataset.count).toBe("0");
+    // …but is referenced by xe-a (same repo) AND xe-c (the other repo).
+    expect(within(xedge()).getByTestId("aim-cross-in").dataset.count).toBe("2");
+    expect(slugsIn("in")).toEqual(["xe-a", "xe-c"]);
+  });
+
+  it("clicking an inbound chip navigates the inspector to that referrer", async () => {
+    aimsMock.mockResolvedValue(xResponse());
+    renderPane();
+    await awaitLoaded();
+    await selectInTree("xe-b");
+
+    const cChip = xedge().querySelector(
+      '[data-testid="aim-cross-in"] [data-slug="xe-c"]',
+    ) as HTMLElement;
+    fireEvent.click(cChip);
+    await waitFor(() =>
+      expect(screen.getByTestId("aim-inspector").textContent).toContain("the c bearing"),
+    );
+  });
+
+  it("renders no cross-edge section for an isolated node (no edge either way)", async () => {
+    aimsMock.mockResolvedValue(xResponse());
+    renderPane();
+    await awaitLoaded();
+    await selectInTree("xe-iso");
+    expect(within(screen.getByTestId("aim-inspector")).queryByTestId("aim-cross-edges")).toBeNull();
+  });
+});
