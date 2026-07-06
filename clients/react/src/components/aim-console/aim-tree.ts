@@ -41,10 +41,16 @@ export const AIM_GLYPH: Record<AimState, string> = {
   dead: "⊘",
 };
 
+// State label — the raw lifecycle token PLUS a 解決 / 未解決 gloss, so the pill
+// + tooltip read `state` in the frame `aim-frontmatter` gives it (`state` = 解決
+// ・未解決). open = 未解決; done = 解決 (到達); dead = 放棄 (self-death, the
+// lineage is kept). The 満足 / 諦め split of a done is per-PROCESS-item and
+// lives in the resignation inventory (`aim-resolution-outcome`), NOT here — the
+// label never calls a done "満足" (a done mixes reached 満足 and parked 諦め).
 export const AIM_STATE_LABEL: Record<AimState, string> = {
-  open: "open",
-  done: "done",
-  dead: "dead",
+  open: "open · 未解決",
+  done: "done · 解決",
+  dead: "dead · 放棄",
 };
 
 // Flatten the per-repo wire response into a single cross-repo node set — used

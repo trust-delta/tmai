@@ -346,6 +346,50 @@ describe("AimPane — inspector", () => {
   });
 });
 
+describe("AimPane — state resolution wording (aim: aim-resolution-outcome)", () => {
+  it("the state pill reads state in the 解決 / 未解決 / 放棄 frame per lifecycle value", async () => {
+    aimsMock.mockResolvedValue(responseStub());
+    renderPane();
+    await awaitLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Tree" }));
+
+    // open → 未解決
+    selectRow("aim-system");
+    let pill = within(await screen.findByTestId("aim-inspector")).getByTestId("aim-state-pill");
+    expect(pill.textContent).toContain("open · 未解決");
+
+    // done → 解決 (到達); NEVER labelled 満足 — the 満足/諦め split is per-PROCESS
+    // and lives in the resignation inventory, not the state label.
+    selectRow("attention-backend");
+    pill = within(screen.getByTestId("aim-inspector")).getByTestId("aim-state-pill");
+    expect(pill.textContent).toContain("done · 解決");
+    expect(pill.textContent).not.toContain("満足");
+
+    // dead → 放棄 (self-death, lineage kept)
+    selectRow("aim-honesty");
+    pill = within(screen.getByTestId("aim-inspector")).getByTestId("aim-state-pill");
+    expect(pill.textContent).toContain("dead · 放棄");
+  });
+
+  it("the edit-modal state options carry the resolution gloss (values unchanged)", async () => {
+    aimsMock.mockResolvedValue(responseStub());
+    renderPane();
+    await awaitLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Tree" }));
+    selectRow("aim-system");
+    const insp = await screen.findByTestId("aim-inspector");
+    fireEvent.click(within(insp).getByRole("button", { name: /編集/ }));
+
+    const modal = await screen.findByTestId("aim-create-modal");
+    const stateSel = within(modal).getByLabelText("state") as HTMLSelectElement;
+    expect(stateSel.textContent).toContain("未解決");
+    expect(stateSel.textContent).toContain("解決");
+    expect(stateSel.textContent).toContain("放棄");
+    // The option VALUES stay the raw lifecycle tokens (the write path is unchanged).
+    expect(Array.from(stateSel.options).map((o) => o.value)).toEqual(["open", "done", "dead"]);
+  });
+});
+
 describe("AimPane — copy reference (aim: operator-cites-aim)", () => {
   it("the slug-head button copies the bare `[[slug]]` pointer", async () => {
     aimsMock.mockResolvedValue(responseStub());

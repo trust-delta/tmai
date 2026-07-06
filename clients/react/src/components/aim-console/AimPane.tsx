@@ -1086,7 +1086,7 @@ function Inspector({
 
         <div className="ac-imeta">
           <span className={cn("ac-pill", repo.primary && "op")}>repo: {repo.repo_label}</span>
-          <span className="ac-pill op">
+          <span className="ac-pill op" data-testid="aim-state-pill">
             state: {AIM_STATE_LABEL[node.state]}
             {node.parent === null ? " · root" : ""}
           </span>
@@ -1455,9 +1455,9 @@ function CreateEditModal({
                   value={state}
                   onChange={(e) => setState(e.target.value as AimState)}
                 >
-                  <option value="open">open</option>
-                  <option value="done">done — aim 到達 / confirmed</option>
-                  <option value="dead">dead — self-death（系譜は残す・親無傷）</option>
+                  <option value="open">open — 未解決（作業中 / owed）</option>
+                  <option value="done">done — 解決（aim 到達 / confirmed）</option>
+                  <option value="dead">dead — 放棄（self-death・系譜は残す・親無傷）</option>
                 </select>
                 {/* Resignation inventory at done-set (#811): when the operator
                     is putting this node TO done, show what this done will park
