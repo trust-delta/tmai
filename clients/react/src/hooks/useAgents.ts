@@ -1,7 +1,6 @@
 import { useCallback } from "react";
 import { type AgentSnapshot, hasAttention } from "@/lib/api";
 import { useSSEContext } from "@/lib/sse-provider";
-import { type CoreEvent, useTauriEvents } from "./useTauriEvents";
 
 // Hook to access the reactive agent list from the shared SSE entity cache.
 //
@@ -15,22 +14,12 @@ export function useAgents() {
   // the user-blocked axis, fed to the StatusBar badge.
   const attentionCount = agents.filter(hasAttention).length;
 
-  // refreshCache triggers a full re-bootstrap; used by the Tauri event path
-  // to pull a fresh snapshot when the desktop app signals an agent change.
+  // refreshCache triggers a full re-bootstrap; callers use it to pull a fresh
+  // snapshot after an out-of-band mutation (e.g. launching a Producer) that
+  // isn't yet reflected by the live AgentUpdate SSE stream.
   const refresh = useCallback(() => {
     void refreshCache();
   }, [refreshCache]);
-
-  const handleTauriEvent = useCallback(
-    (event: CoreEvent) => {
-      if (event.type === "agents-updated") {
-        refresh();
-      }
-    },
-    [refresh],
-  );
-
-  useTauriEvents(handleTauriEvent);
 
   return { agents, attentionCount, loading, refresh };
 }
