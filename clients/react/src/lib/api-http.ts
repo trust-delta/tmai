@@ -1,6 +1,7 @@
 // HTTP/SSE/WebSocket API layer for tmai axum backend.
 // Replaces Tauri IPC — all communication goes through the existing web API.
 
+import type { AgentAttention } from "@/types/generated/AgentAttention";
 import type { AgentCtxUsage } from "@/types/generated/AgentCtxUsage";
 import type { AimCreateRequest } from "@/types/generated/AimCreateRequest";
 import type { AimEditRequest } from "@/types/generated/AimEditRequest";
@@ -8,6 +9,7 @@ import type { AimState } from "@/types/generated/AimState";
 import type { AimsResponse } from "@/types/generated/AimsResponse";
 import type { AimWire } from "@/types/generated/AimWire";
 import type { BootstrapRequiredEvent } from "@/types/generated/BootstrapRequiredEvent";
+import type { DetectionSource } from "@/types/generated/DetectionSource";
 import type { DispatchBundle } from "@/types/generated/DispatchBundle";
 import type { DispatchSnapshot } from "@/types/generated/DispatchSnapshot";
 import type { EntityUpdateEnvelope } from "@/types/generated/EntityUpdateEnvelope";
@@ -22,6 +24,7 @@ import type { PrDiffResponse } from "@/types/generated/PrDiffResponse";
 import type { ProducerLaunchRequest } from "@/types/generated/ProducerLaunchRequest";
 import type { PrSummaryWire } from "@/types/generated/PrSummaryWire";
 import type { QueueAgentEntry } from "@/types/generated/QueueAgentEntry";
+import type { QueuedPrompt } from "@/types/generated/QueuedPrompt";
 import type { QueueSnapshot } from "@/types/generated/QueueSnapshot";
 import type { RepoAimsWire } from "@/types/generated/RepoAimsWire";
 import type { RepoIssuesWire } from "@/types/generated/RepoIssuesWire";
@@ -37,8 +40,10 @@ import type { UnitRepoWire } from "@/types/generated/UnitRepoWire";
 import type { Vendor } from "@/types/generated/Vendor";
 import type { WorkerDispatchMap } from "@/types/generated/WorkerDispatchMap";
 import type { WorkflowSnapshot } from "@/types/generated/WorkflowSnapshot";
+import type { WorktreeSnapshot } from "@/types/generated/WorktreeSnapshot";
 
 export type {
+  AgentAttention,
   AgentCtxUsage,
   AimCreateRequest,
   AimEditRequest,
@@ -46,6 +51,7 @@ export type {
   AimsResponse,
   AimWire,
   BootstrapRequiredEvent,
+  DetectionSource,
   DispatchBundle,
   EntityUpdateEnvelope,
   HandoffContentResponse,
@@ -59,6 +65,7 @@ export type {
   ProducerLaunchRequest,
   PrSummaryWire,
   QueueAgentEntry,
+  QueuedPrompt,
   QueueSnapshot,
   RepoAimsWire,
   RepoIssuesWire,
@@ -72,6 +79,7 @@ export type {
   UnitRepoWire,
   Vendor,
   WorkerDispatchMap,
+  WorktreeSnapshot,
 };
 
 // ── Connection config ──
@@ -137,8 +145,11 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 // `attention?.required` + `attention?.reason` to drive UI semantics
 // (see `AgentCard.tsx::attentionPill`).
 
-export type DetectionSource = "CapturePane" | "IpcSocket" | "HttpHook" | "WebSocket";
-export type SendCapability = "Ipc" | "Tmux" | "PtyInject" | "None";
+// `DetectionSource` is re-exported from `@/types/generated/DetectionSource`
+// (see the generated-type block at the top of this file). The wire enum is
+// snake_case (`http_hook` | `web_socket` | `pty_server`); the retired
+// PascalCase hand-mirror that used to live here silently broke every
+// `switch (detection_source)` at runtime.
 
 // ── Attention axis (decision tmai-core@2026-05-09 Phase 4) ──
 //
@@ -150,7 +161,8 @@ export type SendCapability = "Ipc" | "Tmux" | "PtyInject" | "None";
 // - `"started"`   — just spawned, awaiting first user prompt
 // - `"halted"`    — at a permission/selection prompt; user must answer
 // - `"completed"` — turn finished; user must decide what to do next
-export type AgentAttention = "started" | "halted" | "completed";
+//
+// `AgentAttention` is re-exported from `@/types/generated/AgentAttention`.
 
 // The single "is this agent waiting on the user?" predicate (decision
 // tmai-core@2026-05-09 Phase 4). Any non-null `attention` value
@@ -248,7 +260,6 @@ export interface AgentSnapshot {
   active_subagents: number;
   compaction_count: number;
   pty_session_id: string | null;
-  send_capability: SendCapability;
   is_virtual: boolean;
   team_info: { team_name: string; member_name: string } | null;
   connection_channels?: ConnectionChannels;
@@ -310,15 +321,8 @@ export interface BootstrapPayload {
 }
 
 // ── Prompt Queue ──
-
-import type { ActionOrigin } from "@/types";
-
-export interface QueuedPrompt {
-  id: string;
-  prompt: string;
-  queued_at: string; // RFC 3339
-  origin?: ActionOrigin;
-}
+//
+// `QueuedPrompt` is re-exported from `@/types/generated/QueuedPrompt`.
 
 // ── Project grouping ──
 
@@ -597,7 +601,7 @@ export function groupByProject(
         worktrees.unshift({
           name: "main",
           path,
-          branch: mainSnap.branch,
+          branch: mainSnap.branch ?? null,
           isWorktree: false,
           dirty: mainSnap.is_dirty ?? false,
           agents: [],
@@ -611,7 +615,7 @@ export function groupByProject(
       worktrees.push({
         name: snap.name,
         path: snap.path,
-        branch: snap.branch,
+        branch: snap.branch ?? null,
         isWorktree: true,
         dirty: snap.is_dirty ?? false,
         agents: [],
@@ -639,19 +643,8 @@ export function groupByProject(
 }
 
 // ── Worktree types ──
-
-export interface WorktreeSnapshot {
-  repo_name: string;
-  repo_path: string;
-  name: string;
-  path: string;
-  branch: string | null;
-  is_main: boolean;
-  agent_target: string | null;
-  agent_status: string | null;
-  is_dirty: boolean | null;
-  diff_summary: { files_changed: number; insertions: number; deletions: number } | null;
-}
+//
+// `WorktreeSnapshot` is re-exported from `@/types/generated/WorktreeSnapshot`.
 
 export interface WorktreeDiffResponse {
   diff: string | null;

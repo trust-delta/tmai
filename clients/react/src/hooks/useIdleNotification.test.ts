@@ -3,15 +3,15 @@ import { describe, expect, test } from "vitest";
 // Test the pure logic functions used by useIdleNotification
 // (We cannot use renderHook since @testing-library/react is not available)
 
-// Re-implement getDelay logic for testing (mirrors the hook's internal function)
-type DetectionSource = "CapturePane" | "IpcSocket" | "HttpHook" | "WebSocket";
+// Re-implement getDelay logic for testing (mirrors the hook's internal
+// function). The wire enum is snake_case (`@/types/generated/DetectionSource`).
+type DetectionSource = "http_hook" | "web_socket" | "pty_server";
 
 function getDelay(source: DetectionSource, thresholdSecs: number): number {
   switch (source) {
-    case "HttpHook":
+    case "http_hook":
       return 0;
-    case "IpcSocket":
-    case "WebSocket":
+    case "web_socket":
       return Math.min(thresholdSecs * 1000, 2000);
     default:
       return thresholdSecs * 1000;
@@ -19,28 +19,22 @@ function getDelay(source: DetectionSource, thresholdSecs: number): number {
 }
 
 describe("getDelay — notification delay based on detection source", () => {
-  test("HttpHook: always 0 (immediate notification)", () => {
-    expect(getDelay("HttpHook", 10)).toBe(0);
-    expect(getDelay("HttpHook", 60)).toBe(0);
-    expect(getDelay("HttpHook", 0)).toBe(0);
+  test("http_hook: always 0 (immediate notification)", () => {
+    expect(getDelay("http_hook", 10)).toBe(0);
+    expect(getDelay("http_hook", 60)).toBe(0);
+    expect(getDelay("http_hook", 0)).toBe(0);
   });
 
-  test("IpcSocket: capped at 2000ms", () => {
-    expect(getDelay("IpcSocket", 10)).toBe(2000);
-    expect(getDelay("IpcSocket", 1)).toBe(1000);
-    expect(getDelay("IpcSocket", 0)).toBe(0);
+  test("web_socket: capped at 2000ms", () => {
+    expect(getDelay("web_socket", 10)).toBe(2000);
+    expect(getDelay("web_socket", 1)).toBe(1000);
+    expect(getDelay("web_socket", 0)).toBe(0);
   });
 
-  test("WebSocket: capped at 2000ms (same as IPC)", () => {
-    expect(getDelay("WebSocket", 10)).toBe(2000);
-    expect(getDelay("WebSocket", 1)).toBe(1000);
-    expect(getDelay("WebSocket", 0)).toBe(0);
-  });
-
-  test("CapturePane: full threshold duration", () => {
-    expect(getDelay("CapturePane", 10)).toBe(10000);
-    expect(getDelay("CapturePane", 30)).toBe(30000);
-    expect(getDelay("CapturePane", 0)).toBe(0);
+  test("pty_server: full threshold duration", () => {
+    expect(getDelay("pty_server", 10)).toBe(10000);
+    expect(getDelay("pty_server", 30)).toBe(30000);
+    expect(getDelay("pty_server", 0)).toBe(0);
   });
 });
 
@@ -178,7 +172,7 @@ describe("notification trigger conditions", () => {
     // Simulate: Processing → Idle (5s) → Processing → Idle (5s) → Processing
     // With 10s threshold, no notification should be sent
     const threshold = 10;
-    const delay = getDelay("CapturePane", threshold);
+    const delay = getDelay("pty_server", threshold);
     const flickerDuration = 5000; // 5 seconds
 
     // The flicker duration is shorter than the delay, so the timer
