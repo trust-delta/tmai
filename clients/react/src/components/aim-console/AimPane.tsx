@@ -86,6 +86,7 @@ import {
   type WorkingDeltaKind,
   workingDeltaKind,
 } from "./aim-tree";
+import { buildCrossEdges, type CrossEdge, type CrossEdgeGraph, resolveEdges } from "./cross-edges";
 import { RESIGNATION_FRONTIER, resignationInventory } from "./resignation";
 import { suggestSlug, validateAimSlug } from "./slug";
 
@@ -139,6 +140,10 @@ export function AimFace({ unitName }: { unitName: string | null }) {
   const allNodes = useMemo(() => flattenRepos(data), [data]);
   const ledger = useMemo(() => ledgerCounts(allNodes), [allNodes]);
   const ticks = useMemo(() => rulerOrder(repos), [repos]);
+  // Cross-edge graph + forest index for the inspector — forest-wide (a DAG edge
+  // crosses the repo boundary), derived once per forest, not per selection.
+  const crossEdges = useMemo(() => buildCrossEdges(allNodes), [allNodes]);
+  const allBySlug = useMemo(() => bySlugMap(allNodes), [allNodes]);
 
   const [mode, setMode] = useUIPref("aimMode");
   const [query, setQuery] = useState("");
@@ -399,6 +404,8 @@ export function AimFace({ unitName }: { unitName: string | null }) {
           <Inspector
             key={sel.node.slug}
             sel={sel}
+            crossEdges={crossEdges}
+            allBySlug={allBySlug}
             onSelectAncestor={select}
             onEdit={() => openEdit(sel.node.slug)}
             onAddChild={(parent) => openCreate(sel.repo.repo_root, parent)}
@@ -1016,12 +1023,16 @@ function OverviewRuler({
 
 function Inspector({
   sel,
+  crossEdges,
+  allBySlug,
   onSelectAncestor,
   onEdit,
   onAddChild,
   onClose,
 }: {
   sel: Selection;
+  crossEdges: CrossEdgeGraph;
+  allBySlug: ReadonlyMap<string, AimWire>;
   onSelectAncestor: (slug: string) => void;
   onEdit: () => void;
   onAddChild: (parent: string) => void;
@@ -1030,6 +1041,15 @@ function Inspector({
   const { node, repo, bySlug } = sel;
   const chain = useMemo(() => ancestry(node.slug, bySlug), [node.slug, bySlug]);
   const wd = workingDeltaKind(node);
+  // This node's lateral DAG edges, resolved forest-wide against `allBySlug`.
+  const outbound = useMemo(
+    () => resolveEdges(crossEdges.outbound.get(node.slug) ?? [], allBySlug),
+    [crossEdges, node.slug, allBySlug],
+  );
+  const inbound = useMemo(
+    () => resolveEdges(crossEdges.inbound.get(node.slug) ?? [], allBySlug),
+    [crossEdges, node.slug, allBySlug],
+  );
 
   return (
     <div className="ac-insp-in" data-testid="aim-inspector">
@@ -1117,6 +1137,12 @@ function Inspector({
           resolves={(slug) => bySlug.has(slug)}
           onNavigate={onSelectAncestor}
         />
+
+        {/* Cross-edge inspector (aim: aim-cross-edge-link) — the node's lateral
+            DAG edges both ways: → outbound (what its body links to) and ←
+            inbound (what links to it, which the body itself cannot show).
+            Rendered only when the node has an edge in either direction. */}
+        <CrossEdgeInspector outbound={outbound} inbound={inbound} onNavigate={onSelectAncestor} />
 
         {/* Resignation inventory (#811) — done is reversible attention-parking,
           so on an already-done node the parked objects stay visible, quietly.
@@ -1220,6 +1246,86 @@ function ResignationInventoryView({
       <div className="ac-resig-frontier" data-testid="resig-frontier">
         {RESIGNATION_FRONTIER}
       </div>
+    </div>
+  );
+}
+
+// ── cross-edge inspector (aim: aim-cross-edge-link) ───────────────────
+//
+// The node's lateral DAG position, derived from body `[[slug]]` links (NOT the
+// tree/parent edges the breadcrumb shows). Two directions:
+//   → outbound — the slugs THIS body links to. A compact complement to the
+//     body's `# DAG` prose (which carries the descriptions); a dangling target
+//     (unknown slug) shows dim + non-navigable — surfaced, never dropped.
+//   ← inbound  — the nodes whose body links HERE ("referenced by"), the view
+//     the body itself cannot render. Each source is a real node (resolved).
+// An isolated node (no edge either way) renders nothing — no empty weight on a
+// leaf. Facts only: adjacency in graph order, never ranked or scored.
+function CrossEdgeInspector({
+  outbound,
+  inbound,
+  onNavigate,
+}: {
+  outbound: CrossEdge[];
+  inbound: CrossEdge[];
+  onNavigate: (slug: string) => void;
+}) {
+  if (outbound.length === 0 && inbound.length === 0) return null;
+  return (
+    <div className="ac-xedge" data-testid="aim-cross-edges">
+      <div className="ac-isec">cross-edges — 依存グラフ（body [[slug]]）</div>
+      <CrossEdgeRow dir="out" label="→ outbound" edges={outbound} onNavigate={onNavigate} />
+      <CrossEdgeRow dir="in" label="← inbound" edges={inbound} onNavigate={onNavigate} />
+    </div>
+  );
+}
+
+function CrossEdgeRow({
+  dir,
+  label,
+  edges,
+  onNavigate,
+}: {
+  dir: "out" | "in";
+  label: string;
+  edges: CrossEdge[];
+  onNavigate: (slug: string) => void;
+}) {
+  return (
+    <div className="ac-xedge-row" data-testid={`aim-cross-${dir}`} data-count={edges.length}>
+      <span className="ac-xedge-dir">
+        {label} <span className="ac-xedge-n">{edges.length}</span>
+      </span>
+      {edges.length === 0 ? (
+        <span className="ac-xedge-none">— なし —</span>
+      ) : (
+        <span className="ac-xedge-chips">
+          {edges.map((e) =>
+            e.node !== null ? (
+              <button
+                key={e.slug}
+                type="button"
+                className="ac-bodylink"
+                data-slug={e.slug}
+                onClick={() => onNavigate(e.slug)}
+                title={e.node.aim}
+              >
+                {e.slug}
+              </button>
+            ) : (
+              <span
+                key={e.slug}
+                className="ac-bodylink dim"
+                data-slug={e.slug}
+                data-dangling="true"
+                title="このforestに未読込 — 未解決 / repo を跨ぐ参照"
+              >
+                {e.slug}
+              </span>
+            ),
+          )}
+        </span>
+      )}
     </div>
   );
 }

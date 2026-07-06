@@ -2264,6 +2264,43 @@
   padding-top: 7px;
 }
 
+/* ── cross-edge inspector (aim: aim-cross-edge-link) ───────────────────────
+   The node's lateral DAG edges (body `[[slug]]`), both directions. Reuses the
+   inspector's `.ac-isec` section header + the `.ac-bodylink` cross-ref chip
+   (cyan = resolved / dim = dangling); only the two-direction layout is new.
+   Facts, not owed work — no drift amber, no severity ramp. */
+.aim-console .ac-xedge {
+  margin-top: 10px;
+}
+.aim-console .ac-xedge-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  padding: 3px 0;
+  font-size: 12px;
+}
+.aim-console .ac-xedge-dir {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.5px;
+  color: var(--dim);
+}
+.aim-console .ac-xedge-n {
+  color: var(--faint);
+}
+.aim-console .ac-xedge-none {
+  font-size: 11px;
+  color: var(--faint);
+}
+.aim-console .ac-xedge-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
 /* ── buttons (inspector + modal) ──────────────────────────────────────── */
 .aim-console .ac-btn {
   padding: 6px 12px;
