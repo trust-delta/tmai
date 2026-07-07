@@ -3,7 +3,7 @@
 /**
  * Lifecycle state of an aim node.
  *
- * Per `doc/aims/README.md`: `done` = the aim was reached / confirmed; `dead` =
+ * Per `docs/aims/README.md`: `done` = the aim was reached / confirmed; `dead` =
  * self-death (the means failed; the lineage stays, the parent is untouched).
  * Unlike a decision's `status`, this is a node-local fact, not an authority
  * gate — the machine marks, it never appraises.

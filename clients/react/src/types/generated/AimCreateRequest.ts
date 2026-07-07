@@ -5,7 +5,7 @@
  * Stage 2-A). `state` defaults to `open` server-side (not on the wire), the
  * body starts empty, and no cross-edges are written. `slug` is the
  * operator-chosen, NON-dated, kebab / filename-safe, **unique** node identity
- * (`doc/aims/<slug>.md`).
+ * (`docs/aims/<slug>.md`).
  */
 export type AimCreateRequest = { 
 /**
