@@ -60,7 +60,7 @@ body: string,
 drift: AimDriftWire | null, 
 /**
  * Working-tree presence facts for this node (Design B of
- * `doc/aims/aim-drift-commit-boundary.md`): uncommitted edits / an
+ * `docs/aims/aim-drift-commit-boundary.md`): uncommitted edits / an
  * uncommitted `aim:`-anchor edit / an untracked new node. A SEPARATE
  * field and type from [`Self::drift`] on purpose — the committed layer
  * states order judgments, this layer states presence only. `null` /

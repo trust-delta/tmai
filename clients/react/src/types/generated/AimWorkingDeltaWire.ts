@@ -3,7 +3,7 @@
 /**
  * Working-tree presence facts for one aim node — the wire projection of
  * [`crate::workbench::compose::AimWorkingDeltaItem`] (Design B of
- * `doc/aims/aim-drift-commit-boundary.md`). Deliberately a separate type from
+ * `docs/aims/aim-drift-commit-boundary.md`). Deliberately a separate type from
  * [`AimDriftWire`]: the committed layer states ORDER judgments (it carries
  * commit coordinates), this layer states PRESENCE only — there is no date /
  * sha / ordering field here because a working tree has none to state.

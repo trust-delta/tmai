@@ -164,7 +164,7 @@
           "aims"
         ],
         "summary": "Documentation stub for `GET /api/units/{unit}/aims`.",
-        "description": "JSON projection of the unit's aim-tree records (`doc/aims/`) — the aim-tree\nread surface (graduation Stage 1; observation\n`2026-06-05-aim-tree-write-first-record-structure.md`). Every\n`doc/aims/<slug>.md` record, grouped per repo, surfacing the full node: the\nhuman bearing (`aim`), the tree skeleton (`parent`), the lifecycle `state`\n(`open | done | dead`), the DAG cross-edges (`depends_on` / `serves` /\n`related`, slugs), and the agent-authored interior (`body`, the R-panel\ndetail pane). Each per-repo group carries `repo_root` as the marker\n`repoPath` (#493). Aim slugs are NON-dated stable identities (re-parenting\nedits `parent:`, never the filename). Read-only — write/persist + drift-marks\nare later graduation stages.",
+        "description": "JSON projection of the unit's aim-tree records (`docs/aims/`) — the aim-tree\nread surface (graduation Stage 1; observation\n`2026-06-05-aim-tree-write-first-record-structure.md`). Every\n`docs/aims/<slug>.md` record, grouped per repo, surfacing the full node: the\nhuman bearing (`aim`), the tree skeleton (`parent`), the lifecycle `state`\n(`open | done | dead`), the DAG cross-edges (`depends_on` / `serves` /\n`related`, slugs), and the agent-authored interior (`body`, the R-panel\ndetail pane). Each per-repo group carries `repo_root` as the marker\n`repoPath` (#493). Aim slugs are NON-dated stable identities (re-parenting\nedits `parent:`, never the filename). Read-only — write/persist + drift-marks\nare later graduation stages.",
         "operationId": "get_aims_doc",
         "parameters": [
           {
@@ -271,7 +271,7 @@
           {
             "name": "slug",
             "in": "path",
-            "description": "Aim node slug (the `doc/aims/<slug>.md` filename stem)",
+            "description": "Aim node slug (the `docs/aims/<slug>.md` filename stem)",
             "required": true,
             "schema": {
               "type": "string"
@@ -667,7 +667,7 @@
       },
       "AimCreateRequest": {
         "type": "object",
-        "description": "`POST /api/units/{unit}/aims` request — create a new aim node (graduation\nStage 2-A). `state` defaults to `open` server-side (not on the wire), the\nbody starts empty, and no cross-edges are written. `slug` is the\noperator-chosen, NON-dated, kebab / filename-safe, **unique** node identity\n(`doc/aims/<slug>.md`).",
+        "description": "`POST /api/units/{unit}/aims` request — create a new aim node (graduation\nStage 2-A). `state` defaults to `open` server-side (not on the wire), the\nbody starts empty, and no cross-edges are written. `slug` is the\noperator-chosen, NON-dated, kebab / filename-safe, **unique** node identity\n(`docs/aims/<slug>.md`).",
         "required": [
           "slug",
           "aim"
@@ -745,7 +745,7 @@
       },
       "AimState": {
         "type": "string",
-        "description": "Lifecycle state of an aim node.\n\nPer `doc/aims/README.md`: `done` = the aim was reached / confirmed; `dead` =\nself-death (the means failed; the lineage stays, the parent is untouched).\nUnlike a decision's `status`, this is a node-local fact, not an authority\ngate — the machine marks, it never appraises.",
+        "description": "Lifecycle state of an aim node.\n\nPer `docs/aims/README.md`: `done` = the aim was reached / confirmed; `dead` =\nself-death (the means failed; the lineage stays, the parent is untouched).\nUnlike a decision's `status`, this is a node-local fact, not an authority\ngate — the machine marks, it never appraises.",
         "enum": [
           "open",
           "done",
@@ -827,7 +827,7 @@
               },
               {
                 "$ref": "#/components/schemas/AimWorkingDeltaWire",
-                "description": "Working-tree presence facts for this node (Design B of\n`doc/aims/aim-drift-commit-boundary.md`): uncommitted edits / an\nuncommitted `aim:`-anchor edit / an untracked new node. A SEPARATE\nfield and type from [`Self::drift`] on purpose — the committed layer\nstates order judgments, this layer states presence only. `null` /\nabsent when the working tree is clean for this node. Populated **only**\nby the read endpoint; [`Self::from_record`] leaves it `None`."
+                "description": "Working-tree presence facts for this node (Design B of\n`docs/aims/aim-drift-commit-boundary.md`): uncommitted edits / an\nuncommitted `aim:`-anchor edit / an untracked new node. A SEPARATE\nfield and type from [`Self::drift`] on purpose — the committed layer\nstates order judgments, this layer states presence only. `null` /\nabsent when the working tree is clean for this node. Populated **only**\nby the read endpoint; [`Self::from_record`] leaves it `None`."
               }
             ]
           }
@@ -835,7 +835,7 @@
       },
       "AimWorkingDeltaWire": {
         "type": "object",
-        "description": "Working-tree presence facts for one aim node — the wire projection of\n[`crate::workbench::compose::AimWorkingDeltaItem`] (Design B of\n`doc/aims/aim-drift-commit-boundary.md`). Deliberately a separate type from\n[`AimDriftWire`]: the committed layer states ORDER judgments (it carries\ncommit coordinates), this layer states PRESENCE only — there is no date /\nsha / ordering field here because a working tree has none to state.",
+        "description": "Working-tree presence facts for one aim node — the wire projection of\n[`crate::workbench::compose::AimWorkingDeltaItem`] (Design B of\n`docs/aims/aim-drift-commit-boundary.md`). Deliberately a separate type from\n[`AimDriftWire`]: the committed layer states ORDER judgments (it carries\ncommit coordinates), this layer states PRESENCE only — there is no date /\nsha / ordering field here because a working tree has none to state.",
         "required": [
           "uncommitted",
           "uncommitted_anchor_change",
@@ -2680,7 +2680,7 @@
       },
       "RepoAimsWire": {
         "type": "object",
-        "description": "One repo's projected aim-tree slice. Mirrors\n[`super::approaches_view::RepoApproachesWire`]'s wrapper shape — the\nReact section passes `repo_root` as the marker `repoPath` (same as\ndecisions / approaches, #493). The list carries **every**\naim record in `<repo>/doc/aims/`, sorted ascending by slug.",
+        "description": "One repo's projected aim-tree slice. Mirrors\n[`super::approaches_view::RepoApproachesWire`]'s wrapper shape — the\nReact section passes `repo_root` as the marker `repoPath` (same as\ndecisions / approaches, #493). The list carries **every**\naim record in `<repo>/docs/aims/`, sorted ascending by slug.",
         "required": [
           "repo_label",
           "repo_root",
@@ -3361,7 +3361,7 @@
     },
     {
       "name": "aims",
-      "description": "Aims view — the aim-tree read surface (graduation Stage 1; observation 2026-06-05-aim-tree-write-first-record-structure). A recursive purpose=means tree of aim nodes (doc/aims/<slug>.md, NON-dated stable slugs) coexisting with decisions / approaches. Surfaces every record (slug / aim / parent / state: open|done|dead / depends_on|serves|related DAG edges / body) grouped per repo, carrying repo_root as the marker repoPath. Read-only; write/persist + drift-marks are later stages."
+      "description": "Aims view — the aim-tree read surface (graduation Stage 1; observation 2026-06-05-aim-tree-write-first-record-structure). A recursive purpose=means tree of aim nodes (docs/aims/<slug>.md, NON-dated stable slugs) coexisting with decisions / approaches. Surfaces every record (slug / aim / parent / state: open|done|dead / depends_on|serves|related DAG edges / body) grouped per repo, carrying repo_root as the marker repoPath. Read-only; write/persist + drift-marks are later stages."
     },
     {
       "name": "prs",
