@@ -1,4 +1,4 @@
-// Pure aim-record file format — parse a `doc/aims/<slug>.md` file into the wire
+// Pure aim-record file format — parse a `docs/aims/<slug>.md` file into the wire
 // shape the aim-console renders, and serialize the operator's frontmatter edits
 // back. A faithful TS mirror of tmai-core's `workbench::aim` write surface
 // (`split_frontmatter` / `serialize_new_aim` / `edit_aim_frontmatter` /
@@ -143,7 +143,7 @@ function parseState(token: string | null): AimState {
   return found;
 }
 
-// Parse one `doc/aims/<slug>.md` file's raw text into an `AimWire`. The
+// Parse one `docs/aims/<slug>.md` file's raw text into an `AimWire`. The
 // git-derived fields (`drift` / `working_delta`) are `null` (no engine / git
 // analysis offline); progress is read from the body's `# PROCESS` section
 // downstream. Throws on a malformed record.

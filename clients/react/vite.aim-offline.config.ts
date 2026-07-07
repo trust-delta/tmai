@@ -2,7 +2,7 @@
 //
 // Identical to `vite.config.ts` except: the entry is `aim-offline.html`, and
 // `@/lib/api` is aliased to the file-backed `api-files` so the unchanged
-// aim-console components read/write a locally-picked `doc/aims/` directory
+// aim-console components read/write a locally-picked `docs/aims/` directory
 // instead of the HTTP engine. The exact-match regex alias is FIRST so it wins
 // over the broad `@` prefix alias (a plain `@/lib/api` string alias would also
 // rewrite `@/lib/api-http`, which `api-files` itself imports — the regex avoids

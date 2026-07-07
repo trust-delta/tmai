@@ -1,7 +1,7 @@
 // Offline aim mode entry — the design-machine authoring surface.
 //
 // Mounts the UNCHANGED `AimFace` (the aim-console's worklist) against a locally
-// picked `doc/aims/` directory via the File System Access API. The vite build
+// picked `docs/aims/` directory via the File System Access API. The vite build
 // (`vite.aim-offline.config.ts`) aliases `@/lib/api` → `@/lib/api-files`, so the
 // reuse is total: `AimFace` + `useUnitAims` + the aim-tree / aim-body-parse
 // logic run as-is, only the read/write transport is file-backed. No engine, no
@@ -74,11 +74,11 @@ function AimOffline(): ReactElement {
         <div className="aim-offline-gate-card">
           <h1>aim offline</h1>
           <p>
-            doc/aims ディレクトリを選ぶと、ローカルのファイルを直接読み書きします（engine
+            docs/aims ディレクトリを選ぶと、ローカルのファイルを直接読み書きします（engine
             不要）。anchor はあなたが直接書き、body はエージェントが書きます。
           </p>
           <button type="button" className="aim-offline-pick" onClick={onPick}>
-            doc/aims を選ぶ
+            docs/aims を選ぶ
           </button>
           {error !== null ? <p className="aim-offline-error">{error}</p> : null}
         </div>

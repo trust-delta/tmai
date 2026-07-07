@@ -5,7 +5,7 @@
 // The rebuilt aim form expresses a node's structured-knowing as `#`-headed
 // markdown. The body is the PRODUCER's domain (authored for write ergonomics);
 // this parser turns that into a shape the inspector renders for the operator.
-// The canonical sections (see `doc/aims/aim-body`), in reading order:
+// The canonical sections (see `docs/aims/aim-body`), in reading order:
 //   - IS         — the agent's INTERPRETATION of the aim: how it read the
 //                  purpose, so the human can confirm it read it right. TOP.
 //   - ESCALATION — the "Go だけで進めない理由" → Producer→operator escalation
@@ -36,7 +36,7 @@ export interface AimBodySection {
 const HEADING = /^#{1,3}\s+(.+?)\s*$/;
 
 // Classify a heading by keyword. The aim form's canonical section labels are
-// IS / ESCALATION / PROCESS / HISTORY / DAG (see `doc/aims/aim-body`); JP
+// IS / ESCALATION / PROCESS / HISTORY / DAG (see `docs/aims/aim-body`); JP
 // glosses + a few synonyms are accepted too. `is` is tested first so an "# IS"
 // heading reads as the agent's interpretation rather than falling to prose.
 function classify(heading: string): AimBodySectionKind {

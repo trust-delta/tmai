@@ -16,7 +16,7 @@
   min-height: 0;
 }
 
-/* Pick gate — shown until a doc/aims directory is chosen. */
+/* Pick gate — shown until a docs/aims directory is chosen. */
 .aim-offline-gate {
   height: 100vh;
   display: grid;

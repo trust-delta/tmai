@@ -3,7 +3,7 @@
 
    Faithful port of the destination mock (`origin/mock/aim-ui-sample` →
    `assets/ui-sample.html`, dev-tool / scale variant). Serves aim node
-   `aim-project-artifact` (`tmai-core:doc/aims/aim-project-artifact.md`; the
+   `aim-project-artifact` (`tmai-core:docs/aims/aim-project-artifact.md`; the
    old `aim-ui` node was archived in the corpus rebuild, tmai-core #528).
 
    SCOPED HYGIENE: the rest of the app keeps its own tokens/themes

@@ -1,6 +1,6 @@
 // PR / Issue status pills + the EXTERNAL-source framing badge — the R₁
 // inventory's Stage-C shells (aim-console destination convergence,
-// tmai-core `doc/approaches/2026-06-09-aim-console-destination-convergence.md`
+// tmai-core `docs/approaches/2026-06-09-aim-console-destination-convergence.md`
 // Stage C; mock `origin/mock/aim-ui-sample` PR rail = colour-coded `.pst`
 // pills + an EXTERNAL framing).
 //
