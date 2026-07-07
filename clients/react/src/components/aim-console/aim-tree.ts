@@ -11,7 +11,7 @@
 // `isOwed` / `frontierRows` / `ledgerCounts` — not 2D layout (the prototype's
 // tidy-tree geometry retired with the canvas it served).
 //
-// Progress-driven (the formalised body model, `doc/aims/aim-body`): the owed
+// Progress-driven (the formalised body model, `docs/aims/aim-body`): the owed
 // signal comes from the body's `# PROCESS` section — each implementation unit
 // carries a per-unit `[done]` / `[todo]` marker. `meansProgress` parses that
 // (client-side, via `aim-body-parse`) into done/todo counts; the ledger, the
@@ -148,7 +148,7 @@ export function aimTone(n: AimWire): AimTone {
 
 // ── Working-tree presence facts (#817) ────────────────────────────────
 //
-// Design B of tmai-core's `doc/aims/drift-git.md` (the working-delta concept,
+// Design B of tmai-core's `docs/aims/drift-git.md` (the working-delta concept,
 // ported from the archived `aim-drift-commit-boundary`): the
 // committed layer (`drift`) states ORDER judgments; `working_delta` states
 // PRESENCE only. The one fact it surfaces to the operator: "the drift verdict

@@ -2,7 +2,7 @@
 // the destination mock (`origin/mock/aim-ui-sample` → `assets/ui-sample.html`,
 // the `.aim` section + the create-aim modal) in the aim-console's scoped
 // dev-tool tokens (`.ac-*` family, `styles/aim-console.css`). Serves aim node
-// `aim-project-artifact` (`tmai-core:doc/aims/aim-project-artifact.md`; the old
+// `aim-project-artifact` (`tmai-core:docs/aims/aim-project-artifact.md`; the old
 // `aim-ui` node was archived in the corpus rebuild, tmai-core #528).
 //
 // THE KEY MOVE — REUSE the logic, REPRODUCE the presentation. The entire aim

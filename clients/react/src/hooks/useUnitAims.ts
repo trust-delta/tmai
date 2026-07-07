@@ -1,6 +1,6 @@
 // Polling hook for the unit's aim-tree view (R panel's ◎ Aims section),
 // consuming `GET /api/units/{unit}/aims` (tmai-core #500): every aim record
-// in each repo's `doc/aims/`, carrying the full node (`slug` / `aim` /
+// in each repo's `docs/aims/`, carrying the full node (`slug` / `aim` /
 // `parent` / `state` / `depends_on` / `serves` / `related` / `body`).
 //
 // The aim-tree twin of `useApproaches` — same shape,

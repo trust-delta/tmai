@@ -4,7 +4,7 @@
 // (`origin/mock/aim-ui-sample` → `assets/ui-sample.html`, dev-tool / scale
 // variant): a full-window 3-pane console — Aim (worklist) ⟂ Session (raw CC)
 // ⟂ PR-rail — under a sober top bar (brand + unit tabs + meta). Serves aim
-// node `aim-project-artifact` (`tmai-core:doc/aims/aim-project-artifact.md`) —
+// node `aim-project-artifact` (`tmai-core:docs/aims/aim-project-artifact.md`) —
 // the console IS the first-class artifact display + operation surface. (The old
 // `aim-ui` node was archived in the corpus rebuild, tmai-core #528.)
 //

@@ -37,7 +37,7 @@ import { PROSE_CLASSES } from "./prose";
 
 export type AimBodyVariant = "rpanel" | "console";
 
-// Canonical reading order (per `doc/aims/aim-body`): IS (the agent's reading
+// Canonical reading order (per `docs/aims/aim-body`): IS (the agent's reading
 // you check first) → ESCALATION (the 律速 blockers) → PROCESS (the plan) →
 // HISTORY (rejected means) → DAG (cross-tree dependencies).
 const CANONICAL: readonly AimBodySectionKind[] = ["is", "obstacle", "means", "history", "dag"];

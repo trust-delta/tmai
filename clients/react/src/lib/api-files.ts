@@ -3,7 +3,7 @@
 // The aim-console reads its tree from `api.aims(unit)` and writes via
 // `api.createAim` / `api.editAim`, all through `@/lib/api`. The offline build
 // aliases `@/lib/api` to THIS module (see `vite.aim-offline.config.ts`), so the
-// UNCHANGED `AimFace` + `useUnitAims` operate on a locally-picked `doc/aims/`
+// UNCHANGED `AimFace` + `useUnitAims` operate on a locally-picked `docs/aims/`
 // directory via the File System Access API instead of the HTTP engine.
 //
 // Scope = the design phase: the static corpus (tree / neighborhood / progress
@@ -30,11 +30,11 @@ import {
 } from "./aim-file-format";
 import { api as httpApi } from "./api-http";
 
-// The operator-picked `doc/aims/` directory (set once by the offline entry's
+// The operator-picked `docs/aims/` directory (set once by the offline entry's
 // directory picker). All three aim methods read/write through it; `null` until
 // a directory is chosen.
 let aimsDir: FileSystemDirectoryHandle | null = null;
-let aimsLabel = "doc/aims";
+let aimsLabel = "docs/aims";
 
 export function setAimsDirectory(handle: FileSystemDirectoryHandle, label?: string): void {
   aimsDir = handle;
@@ -47,7 +47,7 @@ export function aimsDirectoryName(): string {
 
 function requireDir(): FileSystemDirectoryHandle {
   if (aimsDir === null) {
-    throw new Error("no doc/aims directory picked yet");
+    throw new Error("no docs/aims directory picked yet");
   }
   return aimsDir;
 }
