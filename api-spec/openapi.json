@@ -108,7 +108,7 @@
           "producer"
         ],
         "summary": "Documentation stub for `POST /api/producer/launch` (by-path, #581).",
-        "description": "Engine-composed direct `claude` Producer launch, resolved BY PATH (supersedes\nthe #566 by-name `/api/units/{unit}/producer/launch`). The launch cwd DEFINES\nthe unit (aim `producer-cwd`): the `ProducerLaunchRequest` body carries the\npicked `path`, and the engine derives the unit via `Settings::unit_for_path`\n(the owning configured `[[unit]]`, else a `from_dir` synthesis) — so a\nbrand-new project root (the `+` Add-unit bootstrap) launches where by-name\nresolution 404'd. Runs the shared launch builder\n(`producer_cli::build_producer_launch` — compose + #541 readiness + boot file\n#373 + the exact `claude` argv, the SAME builder the terminal `tmai producer`\nCLI uses), then spawns `claude` DIRECTLY into a PTY with the\n`role=producer`/`unit`/`vendor=claude` hints at the spawn act — no bash-wrap /\ntmai-CLI chain. Honors the same cwd-exists (400) guard as\n`/api/spawn`. The 200 body mirrors `/api/spawn`'s response:\n`{ session_id, pid (0), command (\"claude\"), dispatch_id }`. Real handler:\n`crate::web::api::launch_producer_at_path`.",
+        "description": "Engine-composed direct `claude` Producer launch, resolved BY PATH (supersedes\nthe #566 by-name `/api/units/{unit}/producer/launch`). The launch cwd DEFINES\nthe unit (aim `producer-cwd`): the `ProducerLaunchRequest` body carries the\npicked `path`, and the engine derives the unit via `Settings::unit_for_path`\n(a `from_dir` synthesis — the launch cwd defines the unit) — so a\nbrand-new project root (the `+` Add-unit bootstrap) launches where by-name\nresolution 404'd. Runs the shared launch builder\n(`producer_cli::build_producer_launch` — compose + #541 readiness + boot file\n#373 + the exact `claude` argv, the SAME builder the terminal `tmai producer`\nCLI uses), then spawns `claude` DIRECTLY into a PTY with the\n`role=producer`/`unit`/`vendor=claude` hints at the spawn act — no bash-wrap /\ntmai-CLI chain. Honors the same cwd-exists (400) guard as\n`/api/spawn`. The 200 body mirrors `/api/spawn`'s response:\n`{ session_id, pid (0), command (\"claude\"), dispatch_id }`. Real handler:\n`crate::web::api::launch_producer_at_path`.",
         "operationId": "launch_producer_at_path_doc",
         "requestBody": {
           "content": {
@@ -170,7 +170,7 @@
           {
             "name": "unit",
             "in": "path",
-            "description": "Unit name (a configured `[[unit]]` or cwd-synthesized basename)",
+            "description": "Unit name — a live Producer's unit, else a cwd-synthesized project basename",
             "required": true,
             "schema": {
               "type": "string"
@@ -207,7 +207,7 @@
           {
             "name": "unit",
             "in": "path",
-            "description": "Unit name (a configured `[[unit]]` or cwd-synthesized basename)",
+            "description": "Unit name — a live Producer's unit, else a cwd-synthesized project basename",
             "required": true,
             "schema": {
               "type": "string"
@@ -262,7 +262,7 @@
           {
             "name": "unit",
             "in": "path",
-            "description": "Unit name (a configured `[[unit]]` or cwd-synthesized basename)",
+            "description": "Unit name — a live Producer's unit, else a cwd-synthesized project basename",
             "required": true,
             "schema": {
               "type": "string"
@@ -320,7 +320,7 @@
           {
             "name": "unit",
             "in": "path",
-            "description": "Unit name (a configured `[[unit]]`)",
+            "description": "Unit name — a live Producer's unit (else a project under the configured search roots)",
             "required": true,
             "schema": {
               "type": "string"
@@ -356,7 +356,7 @@
           {
             "name": "unit",
             "in": "path",
-            "description": "Unit name (a configured `[[unit]]`)",
+            "description": "Unit name — a live Producer's unit (else a project under the configured search roots)",
             "required": true,
             "schema": {
               "type": "string"
@@ -416,7 +416,7 @@
           {
             "name": "unit",
             "in": "path",
-            "description": "Unit name (a configured `[[unit]]`)",
+            "description": "Unit name — a live Producer's unit (else a project under the configured search roots)",
             "required": true,
             "schema": {
               "type": "string"
@@ -452,7 +452,7 @@
           {
             "name": "unit",
             "in": "path",
-            "description": "Unit name (a configured `[[unit]]`)",
+            "description": "Unit name — a live Producer's unit (else a project under the configured search roots)",
             "required": true,
             "schema": {
               "type": "string"
@@ -497,7 +497,7 @@
           {
             "name": "unit",
             "in": "path",
-            "description": "Unit name (a configured `[[unit]]` or cwd-synthesized basename)",
+            "description": "Unit name — a live Producer's unit, else a cwd-synthesized project basename",
             "required": true,
             "schema": {
               "type": "string"
@@ -536,7 +536,7 @@
           {
             "name": "unit",
             "in": "path",
-            "description": "Unit name (a configured `[[unit]]` or cwd-synthesized basename)",
+            "description": "Unit name — a live Producer's unit, else a cwd-synthesized project basename",
             "required": true,
             "schema": {
               "type": "string"
@@ -2570,7 +2570,7 @@
       },
       "ProducerLaunchRequest": {
         "type": "object",
-        "description": "`POST /api/producer/launch` request — launch a Producer **by path** (aim\n`producer-cwd`: the launch cwd DEFINES the unit). The engine resolves the\nunit from this path via `unit_for_path` (the owning configured `[[unit]]`,\nelse a `from_dir`-synthesized unit), so a brand-new project root that is not\na configured unit still launches — the bootstrap the `+` Add-unit affordance\nneeds (issue #581). The picked path is an absolute dir; passing only a\nbasename (the old by-name launch) could not bootstrap an unknown cwd.",
+        "description": "`POST /api/producer/launch` request — launch a Producer **by path** (aim\n`producer-cwd`: the launch cwd DEFINES the unit). The engine resolves the\nunit from this path via `unit_for_path` (a `from_dir`-synthesized unit — the\nlaunch cwd defines the unit), so a brand-new project root still launches —\nthe bootstrap the `+` Add-unit affordance needs (issue #581). The picked path\nis an absolute dir; passing only a\nbasename (the old by-name launch) could not bootstrap an unknown cwd.",
         "required": [
           "path"
         ],
@@ -3373,7 +3373,7 @@
     },
     {
       "name": "producer",
-      "description": "Engine-composed Producer launch, by PATH (#581 — supersedes the #566 by-name route). `POST /api/producer/launch` takes the picked path; the engine derives the unit via `unit_for_path` (owning `[[unit]]` or a `from_dir` synthesis — the launch cwd defines the unit), runs the shared launch builder (compose + #541 readiness + boot file #373 + the exact `claude` argv) and spawns `claude` with role/unit/vendor hints at the spawn act, no bash-wrap / tmai-CLI chain. The terminal `tmai producer` CLI shares the same builder. A brand-new project root (the `+` Add-unit bootstrap) launches where by-name resolution 404'd."
+      "description": "Engine-composed Producer launch, by PATH (#581 — supersedes the #566 by-name route). `POST /api/producer/launch` takes the picked path; the engine derives the unit via `unit_for_path` (a `from_dir` synthesis — the launch cwd defines the unit), runs the shared launch builder (compose + #541 readiness + boot file #373 + the exact `claude` argv) and spawns `claude` with role/unit/vendor hints at the spawn act, no bash-wrap / tmai-CLI chain. The terminal `tmai producer` CLI shares the same builder. A brand-new project root (the `+` Add-unit bootstrap) launches where by-name resolution 404'd."
     },
     {
       "name": "handoffs",

@@ -87,7 +87,7 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
         "unit": {
-          "description": "Unit name — a configured `[[unit]]` (e.g. `tmai`, `tmai-product`).",
+          "description": "Unit name — a live Producer's unit (`unit ≡ live Producer`; e.g. `tmai`).",
           "type": "string"
         }
       },
@@ -370,7 +370,7 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
         "unit": {
-          "description": "Unit name — a configured `[[unit]]` (e.g. `tmai`, `tmai-product`).",
+          "description": "Unit name — a live Producer's unit (`unit ≡ live Producer`; e.g. `tmai`).",
           "type": "string"
         }
       },
@@ -412,7 +412,7 @@
           "type": "string"
         },
         "unit": {
-          "description": "Unit name — a configured `[[unit]]`.",
+          "description": "Unit name — a live Producer's unit (`unit ≡ live Producer`).",
           "type": "string"
         }
       },
@@ -435,7 +435,7 @@
           "type": "string"
         },
         "unit": {
-          "description": "Unit name — a configured `[[unit]]`.",
+          "description": "Unit name — a live Producer's unit (`unit ≡ live Producer`).",
           "type": "string"
         }
       },
@@ -575,7 +575,7 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
         "unit": {
-          "description": "Unit name — a configured `[[unit]]` (e.g. `tmai`, `tmai-product`).",
+          "description": "Unit name — a live Producer's unit (`unit ≡ live Producer`; e.g. `tmai`).",
           "type": "string"
         }
       },
@@ -592,7 +592,7 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
         "unit": {
-          "description": "Unit name — a configured `[[unit]]` (e.g. `tmai`, `tmai-product`).",
+          "description": "Unit name — a live Producer's unit (`unit ≡ live Producer`; e.g. `tmai`).",
           "type": "string"
         }
       },
