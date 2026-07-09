@@ -3,10 +3,10 @@
 /**
  * `POST /api/producer/launch` request — launch a Producer **by path** (aim
  * `producer-cwd`: the launch cwd DEFINES the unit). The engine resolves the
- * unit from this path via `unit_for_path` (the owning configured `[[unit]]`,
- * else a `from_dir`-synthesized unit), so a brand-new project root that is not
- * a configured unit still launches — the bootstrap the `+` Add-unit affordance
- * needs (issue #581). The picked path is an absolute dir; passing only a
+ * unit from this path via `unit_for_path` (a `from_dir`-synthesized unit — the
+ * launch cwd defines the unit), so a brand-new project root still launches —
+ * the bootstrap the `+` Add-unit affordance needs (issue #581). The picked path
+ * is an absolute dir; passing only a
  * basename (the old by-name launch) could not bootstrap an unknown cwd.
  */
 export type ProducerLaunchRequest = { 
