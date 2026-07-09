@@ -21,9 +21,15 @@ You talk to one agent per project — the Producer. It remembers your past decis
 
 ## What tmai is for
 
-Run several coding projects in parallel: one **Producer** per project — a Claude Code session you talk to — and **workers** under it, one bounded-and-report-back agent per repo. The Producer is read-mostly: it holds the project's memory and current decisions, watches what changed, does the mechanical things itself, dispatches a worker when the implementation would crowd the conversation, and routes only the *irreducible* decisions to you — densified, so your scarce review attention goes to the true bottleneck and nothing else.
+However fast agents get, one thing doesn't scale: the human attention that has to *judge* the result. tmai is built on the premise that this — not agent compute — is the real rate limiter, and that a tool optimizing for anything else is quietly borrowing against it.
 
-The bet: a strong model doesn't need a tool to *make its decisions* for it — but a *called* LLM agent is still episodic (it can't run forever), amnesiac (it doesn't learn across sessions), blind inside the workers it spawns, and bounded in context. tmai supplies exactly those structural pieces:
+**The intuition — crossing the street.** You set the destination; the agent drives toward it. The danger was never the driving — it's the intersections. Looking left-and-right before you cross is a cost you pay *every time*: ten safe crossings don't earn you the eleventh, because each one faces different traffic. *"It was fine yesterday, so I won't look today"* is exactly how people get hit — and *"approve without reading, the last ten were fine"* is the very same move. Skipping the cost doesn't remove it; it just moves downstream, with interest.
+
+So tmai puts up the traffic lights. It tracks what changed and brings you the one crossing you actually have to look at — not all of them — so your attention lands on the risk instead of spreading thin until you stop looking at all. But a light only ever says *"a car is coming."* It never says *"you've arrived."* Whether this is your destination — whether the work is truly done — is a call the light structurally cannot make. That one stays yours: tmai shows the signal, you give the verdict.
+
+Concretely: you run several projects in parallel — one **Producer** per project (a Claude Code session you talk to), with **workers** under it (one bounded, report-back agent per repo). The Producer is read-mostly: it holds the project's memory and decisions, watches what changed, does the mechanical things itself, dispatches a worker when implementation would crowd the conversation, and routes only the *irreducible* decisions back to you — densified, so your scarce attention goes to the true bottleneck and nothing else.
+
+**The bet:** a strong model doesn't need a tool to *make its decisions* for it — but a *called* LLM agent is still episodic (it can't run forever), amnesiac (it doesn't learn across sessions), blind inside the workers it spawns, and bounded in context. tmai supplies exactly those structural pieces:
 
 - **continuity** — a fused baseline (cross-project memory ⊕ project decisions ⊕ in-flight handoff) composed and handed to the Producer at session start, so re-entry costs ~0
 - **real workers** — spawn a Claude Code session in a repo's worktree with a proper brief, run it, get it back; inspect and steer it
