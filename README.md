@@ -54,6 +54,8 @@ Why force this instead of just going faster? Because the scarce thing is your ju
 
 This is a worldview, and it's the whole point — not a setting to turn off. If what you want is to maximize how much an agent does while you're not looking, tmai is the wrong tool, deliberately. It keeps a seam where you stay in the loop, because that seam *is* the value: remove it and what's left isn't tmai. Better to know that before you install than to discover it by friction.
 
+→ How tmai records the destination and arrival — and why *Aim*, not a spec: **[docs/aim.md](docs/aim.md)**.
+
 ## The shape
 
 - **You** (episodic) — talk to one Producer per project; decide the irreducible.
