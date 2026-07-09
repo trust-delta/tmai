@@ -1228,7 +1228,7 @@
       "type": "object"
     },
     "ProducerLaunchRequest": {
-      "description": "`POST /api/producer/launch` request — launch a Producer **by path** (aim\n`producer-cwd`: the launch cwd DEFINES the unit). The engine resolves the\nunit from this path via `unit_for_path` (the owning configured `[[unit]]`,\nelse a `from_dir`-synthesized unit), so a brand-new project root that is not\na configured unit still launches — the bootstrap the `+` Add-unit affordance\nneeds (issue #581). The picked path is an absolute dir; passing only a\nbasename (the old by-name launch) could not bootstrap an unknown cwd.",
+      "description": "`POST /api/producer/launch` request — launch a Producer **by path** (aim\n`producer-cwd`: the launch cwd DEFINES the unit). The engine resolves the\nunit from this path via `unit_for_path` (a `from_dir`-synthesized unit — the\nlaunch cwd defines the unit), so a brand-new project root still launches —\nthe bootstrap the `+` Add-unit affordance needs (issue #581). The picked path\nis an absolute dir; passing only a\nbasename (the old by-name launch) could not bootstrap an unknown cwd.",
       "properties": {
         "path": {
           "description": "Absolute path of the picked launch dir (a repo root or a wrapper). The\nunit is derived from it server-side — NOT passed as a name.",
