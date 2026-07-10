@@ -52,7 +52,7 @@ jobs:
             echo "Affected files:"
             echo "$VIOLATIONS"
             echo "These paths are owned by the tmai-core sync bot."
-            echo "See CONTRIBUTING.md 'Bot-managed generated files' for the recovery flow."
+            echo "See CONTRIBUTING.en.md 'Bot-managed generated files' for the recovery flow."
             exit 1
           fi
 
