@@ -11,6 +11,7 @@ crates/tmai-app/web/tsconfig.tsbuildinfo
 
 # AI assistants
 CLAUDE.md
+CLAUDE.local.md
 AGENTS.md
 GEMINI.md
 .claude/
