@@ -1,8 +1,8 @@
 # tmai
 
-**Tactful Multi Agent Interface** — the exoskeleton a *Producer* agent uses to run multi-project development, and the console you support and observe through.
+**Tactful Multi Agent Interface** — *Producer* エージェントがマルチプロジェクト開発を回すための外骨格 (exoskeleton)、そして人間が補助・観察するためのコンソール。
 
-You talk to one agent per project — the Producer. It remembers your past decisions, tracks what changed (CI, PRs, in-flight work), dispatches a worker when implementation would crowd the conversation, and brings *you* only the decisions that genuinely need a human. tmai is what makes that possible: the continuity layer, the worker spawn/steer surface, the always-on substrate, and the window you watch through.
+会話するのはプロジェクトごとに 1 つのエージェント — Producer — だけ。Producer はあなたの過去の決定を覚えていて、変わったこと (CI、PR、進行中の作業) を追い、実装が会話を圧迫しそうなときは worker を dispatch し、*本当に人間の判断が要る*ものだけをあなたに渡す。tmai はそれを可能にするもの: continuity 層、worker の spawn/steer 面、always-on な substrate、そしてあなたが覗く窓。
 
 [![License](https://img.shields.io/github/license/trust-delta/tmai)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/trust-delta/tmai?display_name=tag)](https://github.com/trust-delta/tmai/releases)
@@ -11,71 +11,71 @@ You talk to one agent per project — the Producer. It remembers your past decis
 [![Ratatui](https://img.shields.io/github/actions/workflow/status/trust-delta/tmai/build-ratatui.yml?branch=main&label=Ratatui)](https://github.com/trust-delta/tmai/actions/workflows/build-ratatui.yml)
 [![API spec](https://img.shields.io/github/actions/workflow/status/trust-delta/tmai/validate-spec.yml?branch=main&label=API%20spec)](https://github.com/trust-delta/tmai/actions/workflows/validate-spec.yml)
 
-> **日本語版**: [README.ja.md](./README.ja.md)
+> **English version**: [README.en.md](./README.en.md)
 
 <p align="center">
   <img src="assets/tmai-demo.gif" alt="tmai demo" width="720">
 </p>
 
-> **This is the tmai monorepo and release hub.** The UI clients (`clients/react/`, `clients/ratatui/`), the wire contract (`api-spec/`), the installer, and the release pipeline live here; only the engine source stays private in [`tmai-core`](https://github.com/trust-delta/tmai-core).
+> **このリポジトリは tmai の monorepo + release hub です。** UI クライアント (`clients/react/`、`clients/ratatui/`)、ワイヤー契約 (`api-spec/`)、installer、リリースパイプラインはここに、エンジン実装のみが private の [`tmai-core`](https://github.com/trust-delta/tmai-core) にあります。
 
-## What tmai is for
+## tmai は何のためにあるか
 
-However fast agents get, one thing doesn't scale: the human attention that has to *judge* the result. tmai is built on the premise that this — not agent compute — is the real rate limiter, and that a tool optimizing for anything else is quietly borrowing against it.
+エージェントがどれだけ速くなっても、スケールしないものが一つある: 結果を*判断*しなければならない人間の注意だ。tmai は、これこそが — エージェントの計算量ではなく — 本当の律速だという前提の上に建っている。そして、それ以外を最適化するツールは、その律速を黙って先食いしているだけだ。
 
-**The intuition — crossing the street.** You set the destination; the agent drives toward it. The danger was never the driving — it's the intersections. Looking left-and-right before you cross is a cost you pay *every time*: ten safe crossings don't earn you the eleventh, because each one faces different traffic. *"It was fine yesterday, so I won't look today"* is exactly how people get hit — and *"approve without reading, the last ten were fine"* is the very same move. Skipping the cost doesn't remove it; it just moves downstream, with interest.
+**直感 — 交差点を渡る。** 目的地を決めるのはあなた。エージェントはそこへ向かって走る。危険なのは走ることではなく、交差点だ。渡る前に左右を見るのは*毎回*払うコストで、10 回安全に渡れても 11 回目は保証されない — 交差点ごとに、来る車が違うからだ。*「昨日は大丈夫だったから今日は見ない」*が、まさに事故の起き方だ。そして*「直近 10 回大丈夫だったから読まずに承認」*も、まったく同じ動きだ。飛ばしてもコストは消えない — 下流へ、利息付きで回るだけだ。
 
-So tmai puts up the traffic lights. It tracks what changed and brings you the one crossing you actually have to look at — not all of them — so your attention lands on the risk instead of spreading thin until you stop looking at all. But a light only ever says *"a car is coming."* It never says *"you've arrived."* Whether this is your destination — whether the work is truly done — is a call the light structurally cannot make. That one stays yours: tmai shows the signal, you give the verdict.
+だから tmai は、そこに信号機を立てる。何が変わったかを追い、あなたが*本当に*見なければならない交差点を — 全部ではなく、その一つを — 持ってくる。だから注意は、薄く広がって結局どこも見なくなるのではなく、リスクのある一点に着地する。だが信号が言えるのは*「車が来ている」*までだ。*「あなたは着いた」*とは決して言わない。ここが目的地か — その仕事が本当に done か — は、信号が構造的に下せない判断だ。それだけはあなたのまま: tmai は signal を見せる、verdict はあなたが下す。
 
-Concretely: you run several projects in parallel — one **Producer** per project (a Claude Code session you talk to), with **workers** under it (one bounded, report-back agent per repo). The Producer is read-mostly: it holds the project's memory and decisions, watches what changed, does the mechanical things itself, dispatches a worker when implementation would crowd the conversation, and routes only the *irreducible* decisions back to you — densified, so your scarce attention goes to the true bottleneck and nothing else.
+具体的には: あなたは複数のプロジェクトを並行で回す — プロジェクトごとに 1 つの **Producer** (あなたが会話する Claude Code セッション) と、その下の **worker** (リポジトリごとに 1 つの、限定的に動いて報告して止まるエージェント)。Producer は read-mostly: プロジェクトの記憶と決定を保持し、変わったことを監視し、機械的なものは自分でやり、実装が会話を圧迫しそうなときは worker を dispatch し、*分解不能な*決定だけを — 高密度に — あなたへ route する。あなたの希少な注意は、真のボトルネックだけに向かう。
 
-**The bet:** a strong model doesn't need a tool to *make its decisions* for it — but a *called* LLM agent is still episodic (it can't run forever), amnesiac (it doesn't learn across sessions), blind inside the workers it spawns, and bounded in context. tmai supplies exactly those structural pieces:
+**賭けはこう:** 強いモデルは「自分の判断を*代行する*」ツールを必要としない — だが*呼び出される* LLM エージェントは依然として episodic (永遠には走れない)、amnesiac (セッション間で学ばない)、自分が spawn した worker の内部に盲目、context が有限。tmai はまさにその構造的なピースを供給する:
 
-- **continuity** — a fused baseline (cross-project memory ⊕ project decisions ⊕ in-flight handoff) composed and handed to the Producer at session start, so re-entry costs ~0
-- **real workers** — spawn a Claude Code session in a repo's worktree with a proper brief, run it, get it back; inspect and steer it
-- **an always-on substrate** — a supervisor that outlives episodic sessions, so an event that lands at 3am has somewhere to go
-- **observability** — the human's out-of-band window into what a worker is actually doing, which the Producer's summary can't give you
+- **continuity** — fused baseline (cross-project memory ⊕ プロジェクトの decisions ⊕ in-flight な handoff) をセッション開始時に合成して Producer に手渡す。再入コストが ~0
+- **本物の worker** — リポジトリの worktree で Claude Code セッションをちゃんとした brief 付きで spawn、走らせて、戻ってこさせる。inspect / steer もできる
+- **always-on な substrate** — episodic なセッションを生き延びる supervisor。午前 3 時に着地したイベントの行き先がある
+- **observability** — worker が*実際に*何をしているかへの、人間の out-of-band な窓 — Producer の要約では得られないもの
 
-### What tmai is *not*
+### tmai が *やらない* こと
 
-- **Not an orchestration feature.** tmai does not decide what to launch, when, how to integrate it, or what architecture to use — that's the Producer's reasoning, in an agent's context where it can flex, not calcified into tmai's code. tmai routes; it doesn't build.
-- **Not single-project fan-out.** The rate limiter is your review attention, not agent compute — five agents finishing in an hour just queues five hours of review onto your desk. The parallelism that's real lives *across* projects, not inside one.
-- **Not a substitute for your judgment.** tmai surfaces the decisions that need you and tracks whether the Producer's confidence was calibrated; it doesn't override the model, and it doesn't pretend a glance-and-approve is a real review. (A thin statement of intent — "this is the contract boundary, push back if it doesn't fit" — is a different thing, and a good one.)
+- **オーケストレーションを*機能として*持たない。** 何を起動するか、いつ、どう統合するか、どのアーキテクチャを使うか — tmai のコードはそれを決めない。それは Producer の推論、flex できるエージェントの context の中であって、tmai のコードに固化 (calcify) させない。tmai は route する、build はしない。
+- **単一プロジェクトのファンアウトではない。** 律速はあなたのレビュー注意であってエージェントの計算量ではない — 5 エージェントが 1 時間で終わっても、5 時間分のレビューがあなたの机に queue されるだけ。本当に並列なのは*プロジェクト横断*であって、1 つのプロジェクトの中ではない。
+- **あなたの判断の代替ではない。** tmai はあなたが要る決定を surface し、Producer の確信度が calibrate されていたかを track する — モデルを上書きしないし、「ちらっと見て承認」を本物のレビューだと偽らない。(薄い意図表明 — 「これが契約境界、合わなければ押し戻せ」— は別物で、それは良いもの。)
 
-## What tmai requires of you
+## tmai があなたに要求すること
 
-tmai is opinionated, and the opinion *is* the product. Adopt it and you adopt a discipline it won't let you quietly skip:
+tmai は思想を持つ。そしてその思想*こそ*がプロダクトだ。tmai を採用するとは、それが黙って省かせてくれない規律を一緒に引き受けるということ:
 
-- **Purpose and means stay apart.** What you commit to — the outcome you bear — is a *decision*. How you're currently chasing it — the mechanism — is an *approach*, kept cheap to change. They're separate records on purpose: a means dressed up as a commitment is the failure mode, not a shortcut.
-- **Only you accept a decision.** The Producer drafts it, argues it, runs the means under it — but it never *accepts* it for you. The one act that binds the project stays a human act, by construction. There is no "the agent decided."
-- **Your attention is rationed, not spent.** tmai brings you the decisions that actually need a human, and refuses to pass a glance-and-approve off as a review.
+- **目的と手段を分ける。** あなたが引き受ける commitment — 気にかける outcome/value — は *decision*。それを今どう追っているか (機構) は *approach* で、安く変えられるまま置かれる。両者は意図的に別の記録だ: 手段を commitment に見せかけることこそが failure mode であって、近道ではない。
+- **decision を accept できるのはあなただけ。** Producer は draft し、論じ、その下で手段を run する — だがあなたの代わりに accept はしない。プロジェクトを縛る唯一の act は、構造的に人間の act のまま。「エージェントが決めた」は存在しない。
+- **あなたの注意は使い潰さない。** tmai は本当に人間が要る決定だけを surface し、「ちらっと見て承認」を本物のレビューだと偽らない。
 
-Why force this instead of just going faster? Because the scarce thing is your judgment, not agent compute — and a tool that makes the *wrong* workflow effortless (approve-all, fan out forever, let the agent bless its own work) burns the scarce thing exactly where it should be guarded. The discipline is the floor that keeps *you* bearing the commitments while the agent carries the mechanism.
+なぜ速く行くのでなく、これを*強制*するのか? 希少なのはあなたの判断であって、エージェントの計算量ではないから。間違ったワークフロー — 全部 approve、無限に fan out、エージェントが自分の仕事を自分で祝福する — を簡単にするツールは、その希少なものを、まさに守るべき場所で焼き尽くす。この規律は、人間が commitment を引き受け続け、エージェントが機構を担う状態を保つ最低ライン (floor) だ。
 
-This is a worldview, and it's the whole point — not a setting to turn off. If what you want is to maximize how much an agent does while you're not looking, tmai is the wrong tool, deliberately. It keeps a seam where you stay in the loop, because that seam *is* the value: remove it and what's left isn't tmai. Better to know that before you install than to discover it by friction.
+これは worldview であり、それ*こそ*が全部だ — off にできる設定ではない。「見ていない間にエージェントがどれだけやれるか」を最大化したいなら、tmai は意図的に間違ったツールだ。tmai は、あなたが loop に居続ける seam を保つ。その seam *こそ*が価値だからだ: それを外せば、残るものは tmai ではない。install してから friction で気づくより、その前に知っておく方がいい。
 
-→ How tmai records the destination and arrival — and why *Aim*, not a spec: **[docs/aim.md](docs/aim.md)**.
+→ tmai が目的地と到着をどう記録するか、そして *なぜ spec でなく Aim* か: **[docs/aim.md](docs/aim.md)**。
 
-## The shape
+## 形
 
-- **You** (episodic) — talk to one Producer per project; decide the irreducible.
-- **The Producer** — one per project (a Claude Code session). Holds the baseline, triages what changed, does the mechanical things itself, dispatches workers, writes briefs. Read-mostly: proposes architecture, doesn't decide it; routes, doesn't build.
-- **tmai** — the **exoskeleton** the Producer runs on (continuity, worker spawn/steer, always-on substrate) *and* the **console** you support and observe through (WebUI, TUI, mobile remote).
-- **Workers** — one per repo: bounded, contract-anchored, report-back Claude Code sessions. A worker never spans repos; tmai does not auto-orchestrate them — coordination across a project's repos is the Producer's reasoning, not tmai's code.
+- **あなた** (episodic) — プロジェクトごとに 1 つの Producer と会話する。分解不能なものを決める。
+- **Producer** — プロジェクトごとに 1 つ (Claude Code セッション)。baseline を保持、変わったことを triage、機械的なものは自分でやる、worker を dispatch、brief を書く。read-mostly: アーキテクチャは*提案*し決定はしない、route し build はしない。
+- **tmai** — Producer が走る **外骨格** (continuity / worker の spawn・steer / always-on substrate) であり、*かつ* あなたが補助・観察する **コンソール** (WebUI、TUI、モバイルリモート)。
+- **worker** — リポジトリごとに 1 つ: 限定的・契約に錨を打った・報告して戻る Claude Code セッション。worker は複数リポジトリに跨らない。tmai は worker 群を自動オーケストレーションしない — プロジェクトのリポジトリ横断の調整は Producer の推論であって tmai のコードではない。
 
-A "project" is a single repo, or the smallest group of repos that share a contract surface toward a common goal (e.g. engine + spec + WebUI). One Producer per project, whatever its repo count.
+「プロジェクト」とは、1 つのリポジトリ、または共通の目的に向けて契約サーフェスを共有する最小のリポジトリ群 (例: エンジン + spec + WebUI)。リポジトリ数がいくつでも、プロジェクトごとに Producer は 1 つ。
 
-## Install
+## インストール
 
-Prebuilt bundle tarballs are attached to this repo's [Releases](https://github.com/trust-delta/tmai/releases). Pick the installer that fits your workflow — all three land the same bundle:
+対応プラットフォームのバンドル tarball は本 repo の [Releases](https://github.com/trust-delta/tmai/releases) に添付されます。用途に合う方法を選んでください — 下記 3 つはすべて同じバンドルを配置します:
 
-### Curl (portable)
+### Curl (どの環境でも動く)
 
 ```bash
-# Latest release into $HOME/.local (default prefix):
+# 最新リリースを $HOME/.local (デフォルト prefix) に:
 curl -fsSL https://raw.githubusercontent.com/trust-delta/tmai/main/install.sh | bash
 
-# Pinned version + custom prefix:
+# バージョンと prefix を指定:
 curl -fsSL https://raw.githubusercontent.com/trust-delta/tmai/main/install.sh \
   | bash -s -- --version 3.2.0 --prefix /usr/local
 ```
@@ -87,105 +87,105 @@ brew tap trust-delta/tmai
 brew install tmai
 ```
 
-### `cargo binstall` (Rust users)
+### `cargo binstall` (Rust 環境がある場合)
 
 ```bash
 cargo binstall tmai
 ```
 
-Reads the `[package.metadata.binstall]` stanza on the [`tmai`](https://crates.io/crates/tmai) crate and pulls the matching platform tarball from Releases.
+crates.io の [`tmai`](https://crates.io/crates/tmai) クレート側 `[package.metadata.binstall]` を参照し、プラットフォームに合う tarball を取得します。
 
-### What lands on disk
+### 展開先
 
 ```
 $PREFIX/bin/tmai
 $PREFIX/bin/tmai-ratatui
-$PREFIX/share/tmai/webui/       # served automatically by tmai (binary-relative fallback)
-$PREFIX/share/tmai/api-spec/    # OpenAPI + CoreEvent JSON Schema reference
+$PREFIX/share/tmai/webui/       # tmai が binary 相対 fallback で自動配信
+$PREFIX/share/tmai/api-spec/    # OpenAPI + CoreEvent JSON Schema リファレンス
 ```
 
-Supported platforms: Linux x86_64, Linux aarch64, macOS arm64. For other platforms, build from source in [`tmai-core`](https://github.com/trust-delta/tmai-core) (requires repository access).
+対応プラットフォーム: Linux x86_64、Linux aarch64、macOS arm64。他のプラットフォームは [`tmai-core`](https://github.com/trust-delta/tmai-core) でのソースビルド (リポジトリ権限が必要)。
 
-## Quick start
+## クイックスタート
 
 ```bash
-# One-time setup: register Claude Code hook receivers in ~/.claude/settings.json
+# 初回セットアップ: ~/.claude/settings.json に Claude Code hook receiver を登録
 tmai init
 
-# Start the engine + operational dashboard TUI (engine health, activity, logs, UI launcher)
+# エンジン + 運用ダッシュボード TUI を起動 (エンジン健全性、アクティビティ、ログ、UI launcher)
 tmai
 
-# Open a Producer session for a project (or repo group), with the fused baseline handed in
+# プロジェクト (またはリポジトリ群) の Producer セッションを開く。fused baseline を手渡した状態で
 tmai producer <unit>
 
-# Browse the decision store
+# decision store をブラウズ
 tmai decisions
 ```
 
-`tmai` serves the bundled WebUI automatically — open the URL it prints. For WebUI development (Vite HMR against a `tmai` backend), see [`CONTRIBUTING.md`](CONTRIBUTING.md#local-development).
+`tmai` はバンドルされた WebUI を自動配信します — 表示される URL を開いてください。WebUI 開発 (Vite HMR を `tmai` backend に対して) は [`CONTRIBUTING.md`](CONTRIBUTING.md) を参照してください。
 
-## What's shipped today
+## 現在 ship しているもの
 
-- **Engine** (`tmai-core`, private) — HTTP/SSE API server (`/api/*`, `/api/events`); MCP host (the Producer's tools for dispatching and steering workers, inspecting agents, driving PRs/CI, and acting on prompts — over stdio JSON-RPC 2.0); hook-based agent detection (`attention: started | halted | completed | null`, driven by Claude Code hooks — no polling); and the **workbench**: `tmai producer <unit>` composes the fused baseline and hands it to a Producer session, `tmai decisions` browses the decision store, `tmai handoff` is the in-flight work-state store.
-- **React WebUI** (`clients/react/`) — the operator surface today: agent list, live preview via xterm, prompt/approve, multi-pane display modes, mobile remote with `AskUserQuestion` support. On a graduation path toward tmai's own surface — *across multiple projects, check project state while conversing with the Producer* — not an operator dashboard, but a window onto what the Producer sees.
-- **Ratatui TUI** (`clients/ratatui/`) — and `tmai`'s default mode is a dashboard TUI: engine health, activity, detections, UI registry, logs, and launching the UI clients. A health viewer + launcher, not an agent-conversation surface.
-- **Wire contract** (`api-spec/`) — OpenAPI 3.1 + CoreEvent JSON Schema + MCP tool snapshot. UIs integrate via three standard surfaces: HTTP REST (`/api/*`), the SSE event stream (`/api/events`), and MCP (`tmai mcp`). The spec follows SemVer independently of the engine; UIs must tolerate unknown event variants and optional fields.
-- **Git surface** — PR / CI / issue integration via `gh`, worktree CRUD.
-- **Install & release** — `install.sh`, the Homebrew tap, the `cargo binstall` metadata stub, and the release workflow that assembles per-target bundle tarballs.
+- **エンジン** (`tmai-core`、private) — HTTP/SSE API サーバー (`/api/*`、`/api/events`)。MCP ホスト (Producer が worker を dispatch/steer する / エージェントを inspect する / PR・CI を駆動する / プロンプトに作用する — stdio JSON-RPC 2.0 経由のツール群)。hook ベースのエージェント検出 (`attention: started | halted | completed | null`、Claude Code の hook 駆動 — ポーリングなし)。そして **workbench**: `tmai producer <unit>` が fused baseline を合成して Producer セッションに手渡す、`tmai decisions` が decision store をブラウズ、`tmai handoff` が in-flight な作業状態の store。
+- **React WebUI** (`clients/react/`) — 現状の operator サーフェス: エージェント一覧、xterm 経由のライブプレビュー、prompt/approve、マルチペイン表示モード、`AskUserQuestion` 対応のモバイルリモート。tmai 独自のサーフェス — *複数プロジェクトで、プロジェクト状態を確認しつつ Producer と対話する* — へ graduate するパス上。operator ダッシュボードではなく、Producer が見ているものへの窓。
+- **Ratatui TUI** (`clients/ratatui/`) — そして `tmai` のデフォルトモードはダッシュボード TUI: エンジン健全性、アクティビティ、検出状態、UI registry、ログ、UI クライアントの起動。health viewer + launcher であってエージェント対話のサーフェスではない。
+- **ワイヤー契約** (`api-spec/`) — OpenAPI 3.1 + CoreEvent JSON Schema + MCP ツールスナップショット。UI は 3 つの標準サーフェスで統合する: HTTP REST (`/api/*`)、SSE イベントストリーム (`/api/events`)、MCP (`tmai mcp`)。spec はエンジンとは独立した SemVer に従う。UI は未知のイベント variant と optional フィールドを許容する必要がある。
+- **Git 面** — `gh` 経由の PR / CI / issue 連携、worktree CRUD。
+- **インストール & リリース** — `install.sh`、Homebrew tap、`cargo binstall` メタデータ stub、target 毎のバンドル tarball を組み立てるリリースワークフロー。
 
-## Direction
+## 方向
 
-The Producer model is being built out, core-first:
+Producer モデルは core-first で構築中:
 
-- **bottom-up feedback** — a worker that completes a task but noticed *"this works, but a different approach would be better"* writes that down; the Producer periodically synthesizes the accumulated notes and brings tradeoff proposals to you. The channel that keeps the *methodology* from calcifying — distinct from "I'm stuck, decide" (which the Producer catches in real time).
-- **idle-gated synthesis** — when you're away, the always-on supervisor wakes the Producer in a retrospective mode; you come back to a dense digest of just the decisions that need you. Preemptible — your session takes priority.
-- **the WebUI graduation** above.
+- **bottom-up feedback** — タスクは完了したが「これは動くが、別のアプローチの方がいい」と気づいた worker がそれを書き残す。Producer は溜まったノートを定期的に synthesize し、tradeoff 込みの提案をあなたに上げる。*方法論*が固化 (calcify) しないようにするチャンネル — 「詰まった、決めて」(これは Producer がリアルタイムで検知する) とは別物。
+- **idle-gated synthesis** — あなたが居ない間、always-on な supervisor が Producer を retrospective モードで起こす。戻ってきたとき、あなたが要る決定だけの高密度な digest を受け取る。preemptible — あなたのセッションが priority を取る。
+- 上記の **WebUI graduation**。
 
-The previous "orchestration *as a feature*" model — auto-approve, cron-scheduled launches, automatic CI-event handling — was removed across `v3.0.0`–`v3.x`: a tool that makes the wrong workflow easy is worse than no tool. The design records for all of this live in `tmai-core` (private).
+旧「オーケストレーションを*機能として*持つ」モデル — auto-approve、cron スケジュールでの起動、CI イベントの自動ハンドリング — は `v3.0.0`–`v3.x` で撤去された: 間違ったワークフローを簡単にするツールはツールが無いより悪い。これらすべての設計記録は `tmai-core` (private) にある。
 
-## Structure
+## 構成
 
-| Repo | Visibility | Role |
-|------|-----------|------|
-| `trust-delta/tmai` (this repo) | public | Release hub + monorepo. Holds the React WebUI (`clients/react/`), ratatui TUI (`clients/ratatui/`), wire contract (`api-spec/`), installer, and docs. Publishes the bundled tarball. |
-| [`tmai-core`](https://github.com/trust-delta/tmai-core) | private | Core engine — HTTP/SSE API server, MCP host (the Producer's dispatch/steer tools), hook-based agent detection, the workbench. Ships per-target binaries via `core-v*` Releases; generated spec + types flow here via bot PRs. |
-| `tmai-api-spec` / `tmai-react` / `tmai-ratatui` | archive | History-only. Content merged into this repo on 2026-04-23. |
+| Repo | 可視性 | 役割 |
+|------|--------|------|
+| `trust-delta/tmai` (本リポジトリ) | public | release hub + monorepo。React WebUI (`clients/react/`)、ratatui TUI (`clients/ratatui/`)、ワイヤー契約 (`api-spec/`)、installer、ドキュメントを保持。bundle tarball を配布。 |
+| [`tmai-core`](https://github.com/trust-delta/tmai-core) | private | コアエンジン — HTTP/SSE API サーバー、MCP ホスト (Producer の dispatch/steer ツール)、hook ベースのエージェント検出、workbench。`core-v*` Release で target 毎のバイナリを供給し、生成物の spec / types は bot PR 経由で本リポジトリへ流入。 |
+| `tmai-api-spec` / `tmai-react` / `tmai-ratatui` | archive | 履歴保全のみ。内容は 2026-04-23 に本リポジトリへ統合済。 |
 
-## Contributing
+## コントリビューション
 
-UI / contract / docs / packaging changes happen right here — file issues and PRs against this repo:
+UI / 契約 / ドキュメント / パッケージング変更は本リポジトリに直接 issue / PR を提出してください:
 
-- **React WebUI behaviour** → `clients/react/`
-- **Ratatui client behaviour** → `clients/ratatui/`
-- **Wire contract** (REST endpoints, CoreEvent variants, error taxonomy) → `api-spec/` (generated — edits flow from [`tmai-core`](https://github.com/trust-delta/tmai-core) via bot PRs)
-- **Installer / release workflow / docs** → root
+- **React WebUI** → `clients/react/`
+- **Ratatui クライアント** → `clients/ratatui/`
+- **ワイヤー契約** (REST エンドポイント、CoreEvent variants、error taxonomy) → `api-spec/` (生成物 — 編集は [`tmai-core`](https://github.com/trust-delta/tmai-core) 側から bot PR 経由で反映)
+- **Installer / release workflow / docs** → ルート
 
-Engine-only changes (the MCP host, HTTP/SSE implementation, agent detection, the workbench, the Producer's dispatch tools) happen in the private [`tmai-core`](https://github.com/trust-delta/tmai-core). If you need an engine change, open an issue here and we'll triage it through.
+エンジン関連の変更 (MCP ホスト、HTTP/SSE 実装、エージェント検出、workbench、Producer の dispatch ツール) は private の [`tmai-core`](https://github.com/trust-delta/tmai-core) で行います。エンジン側で変更が必要な場合は本リポジトリに issue を立てていただければ triage します。
 
-The previous sub-repos — `tmai-api-spec`, `tmai-react`, `tmai-ratatui` — are archived as of 2026-04-23. Please don't file issues or PRs there.
+旧 sub-repo (`tmai-api-spec`、`tmai-react`、`tmai-ratatui`) は 2026-04-23 に archive 済です — そちらへの issue / PR 提出は控えてください。
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the [local development setup](CONTRIBUTING.md#local-development) (Vite HMR + `tmai` backend), the bot PR recovery flow, and PR conventions. Security reports go through [`SECURITY.md`](SECURITY.md) (GitHub Private Vulnerability Reporting).
+ローカル開発手順 (Vite HMR + `tmai` backend)、bot PR recovery フロー、PR 規約は [`CONTRIBUTING.md`](CONTRIBUTING.md) を参照してください。セキュリティ報告は [`SECURITY.md`](SECURITY.md) (GitHub Private Vulnerability Reporting)。
 
-## Screenshots
+## スクリーンショット
 
 <p align="center">
   <img src="assets/usage-view.png" alt="Usage tracking" width="720">
 </p>
 
 <p align="center">
-  <img src="assets/mobile-screenshot.jpg" alt="Mobile remote — agent list" width="280">
+  <img src="assets/mobile-screenshot.jpg" alt="モバイルリモート — エージェント一覧" width="280">
   &nbsp;&nbsp;
-  <img src="assets/mobile-ask-user-question.jpg" alt="Mobile remote — AskUserQuestion" width="280">
+  <img src="assets/mobile-ask-user-question.jpg" alt="モバイルリモート — AskUserQuestion" width="280">
 </p>
 
-## History
+## 履歴
 
-tmai started as a single monorepo (through 2026-04-18), then briefly split into four repositories ([`tmai-core`](https://github.com/trust-delta/tmai-core) + `tmai-api-spec` / `tmai-react` / `tmai-ratatui`). On 2026-04-21 the UI layer and wire contract were consolidated back here under `clients/` and `api-spec/`; the three sub-repos were archived on 2026-04-23. The last pre-split commit is [88bab7d](https://github.com/trust-delta/tmai/commit/88bab7d); the re-consolidation shipped as [`v2.0.0`](https://github.com/trust-delta/tmai/releases/tag/v2.0.0).
+tmai は当初単一の monorepo として始まり (2026-04-18 まで)、一時的に 4 つのリポジトリ ([`tmai-core`](https://github.com/trust-delta/tmai-core) + `tmai-api-spec` / `tmai-react` / `tmai-ratatui`) に分割されました。2026-04-21 に UI 層と契約を本リポジトリの `clients/` / `api-spec/` 配下へ再統合、旧 3 sub-repo は 2026-04-23 に archive されました。split 直前の最終コミットは [88bab7d](https://github.com/trust-delta/tmai/commit/88bab7d)、再統合は [`v2.0.0`](https://github.com/trust-delta/tmai/releases/tag/v2.0.0) で配布されました。
 
-From `v3.0.0` (2026-05) tmai inverted: it stopped trying to *be* the orchestration layer ("a smart layer over many agents, supplying what each one lacks") and became the exoskeleton a Producer agent uses — the orchestration *locus* moved from tmai's code to the Producer's reasoning. `v3.0.0`–`v3.x` removed the old-premise subsystems (auto-approve, cron scheduling, automatic CI-event handling) and the Producer workbench landed as the new center.
+`v3.0.0` (2026-05) で tmai は反転しました: 「多数のエージェントを覆い、それぞれに足りないものを供給する賢い層」で*ある*ことをやめ、Producer エージェントが使う外骨格になりました — オーケストレーションの*locus* が tmai のコードから Producer の推論へ移った。`v3.0.0`–`v3.x` で旧前提のサブシステム (auto-approve、cron スケジューリング、CI イベントの自動ハンドリング) を撤去し、Producer workbench が新しい中心として landed しました。
 
-The `tmai` crate on crates.io now exists as a thin installer-metadata stub: `1.7.0` is the last "real" crate-packaged release (not yanked), `1.7.1` was a deprecation marker, and `2.0.0`+ carry the `cargo binstall` metadata + stub binaries that print a pointer at the real installer if invoked via `cargo install tmai`. Use any of the install paths above instead.
+crates.io の `tmai` クレートは thin installer-metadata stub として運用中です: `1.7.0` が最後の "実体" クレート (yank せず)、`1.7.1` は deprecation marker、`2.0.0` 以降は `cargo binstall` 用メタデータ + stub バイナリを同梱 (これは `cargo install tmai` で install された場合、実 installer への pointer を表示するだけです)。上記 install path のどれかを使用してください。
 
-## License
+## ライセンス
 
-MIT — see [LICENSE](LICENSE).
+MIT — [LICENSE](LICENSE) 参照。

@@ -250,6 +250,7 @@ jobs:
           # Top-level docs.
           cp LICENSE "${staging}/"
           cp README.md "${staging}/"
+          cp README.en.md "${staging}/"
 
           # Archive + checksum.
           archive="tmai-v${version}-${target}.tar.gz"

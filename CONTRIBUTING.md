@@ -1,97 +1,94 @@
-# Contributing to tmai
+# tmai へのコントリビューション
 
-Thanks for your interest in contributing! This repository is the **tmai monorepo and release hub** — UI layer, wire contract, installer, and release pipeline all live here. File issues and pull requests against this repo for those surfaces; engine-only work happens in the private [`tmai-core`](https://github.com/trust-delta/tmai-core).
+コントリビューションに興味を持っていただきありがとうございます。本リポジトリは **tmai の monorepo + release hub** であり、UI、ワイヤー契約、installer、リリースパイプラインすべてここにあります。これらに対する issue / PR は本リポジトリに直接提出してください。エンジン関連の作業のみが private の [`tmai-core`](https://github.com/trust-delta/tmai-core) で行われます。
 
-> **日本語版**: [CONTRIBUTING.ja.md](./CONTRIBUTING.ja.md)
+> **English version**: [CONTRIBUTING.en.md](./CONTRIBUTING.en.md)
 
-## Where to contribute
+## コントリビュート先
 
-| Change area | Where |
-|-------------|-------|
-| React WebUI behaviour | `clients/react/` (this repo) |
-| Ratatui client behaviour | `clients/ratatui/` (this repo) |
-| Wire contract — REST endpoints, CoreEvent variants, error taxonomy | `api-spec/` (this repo, generated — edits flow from [`tmai-core`](https://github.com/trust-delta/tmai-core) via bot PRs; hand edits are rejected by CI) |
-| Installer, release workflow, bundle version pin | `install.sh` / `.github/workflows/` / `versions.toml` (this repo) |
-| Docs, landing page, screenshots | `README.md` / `README.ja.md` / `CHANGELOG.md` / `assets/` (this repo) |
-| Server logic, orchestration, MCP, HTTP/SSE implementation | private [`tmai-core`](https://github.com/trust-delta/tmai-core) (collaborator access required) |
+| 変更領域 | 場所 |
+|----------|------|
+| React WebUI | `clients/react/` (本リポジトリ) |
+| Ratatui TUI クライアント | `clients/ratatui/` (本リポジトリ) |
+| ワイヤー契約 — REST エンドポイント / CoreEvent variants / error taxonomy | `api-spec/` (本リポジトリ、生成物 — 編集は [`tmai-core`](https://github.com/trust-delta/tmai-core) 側から bot PR 経由で反映、手編集は CI が reject) |
+| Installer / release workflow / bundle version pin | `install.sh` / `.github/workflows/` / `versions.toml` (本リポジトリ) |
+| ドキュメント / ランディング / スクリーンショット | `README.md` / `README.en.md` / `CHANGELOG.md` / `assets/` (本リポジトリ) |
+| サーバーロジック / オーケストレーション / MCP / HTTP / SSE 実装 | private の [`tmai-core`](https://github.com/trust-delta/tmai-core) (collaborator 権限必要) |
 
-The previous sub-repos (`tmai-api-spec`, `tmai-react`, `tmai-ratatui`) were archived on 2026-04-23 — don't file issues or PRs there.
+旧 sub-repo (`tmai-api-spec`、`tmai-react`、`tmai-ratatui`) は 2026-04-23 に archive 済です — そちらへの issue / PR 提出は控えてください。
 
-## What belongs here
+## この hub repo が受け付ける変更
 
-- `clients/react/` — React WebUI source and tests
-- `clients/ratatui/` — ratatui client source and tests
-- `api-spec/` — generated OpenAPI + JSON Schema + MCP snapshot (hand edits rejected by CI; the generator lives in `tmai-core`)
-- `.github/workflows/` — release / validation / pages workflows
+- `clients/react/` — React WebUI のソースとテスト
+- `clients/ratatui/` — ratatui クライアントのソースとテスト
+- `api-spec/` — 生成済 OpenAPI + JSON Schema + MCP snapshot (手編集は CI が reject、ジェネレーターは `tmai-core` 側)
+- `.github/workflows/` — release / validation / pages workflow
 - `install.sh` — curl-pipeable installer
-- `versions.toml` — bundle version pin read by `release.yml`
-- `README.md` / `README.ja.md` / `CHANGELOG.md` / `LICENSE` / `assets/` — landing / docs / media
+- `versions.toml` — `release.yml` が読む bundle バージョン pin
+- `README.md` / `README.en.md` / `CHANGELOG.md` / `LICENSE` / `assets/` — ランディング / ドキュメント / メディア
 
-## Bot-managed generated files
+## Bot 管理の生成ファイル
 
-The following paths are written exclusively by the `tmai-core` sync bot and **must not be hand-edited**:
+以下のパスは `tmai-core` 同期 bot が書き込む専用領域です。**手編集は禁止**です：
 
-| Path | Contents |
-|------|----------|
-| `clients/react/src/types/generated/` | TypeScript types generated from the Rust source in `tmai-core` |
-| `clients/ratatui/src/types/generated/` | Rust types mirrored from `tmai-core` |
-| `api-spec/` | OpenAPI spec, JSON Schema, MCP snapshot — all generated |
+| パス | 内容 |
+|------|------|
+| `clients/react/src/types/generated/` | `tmai-core` の Rust ソースから生成した TypeScript 型 |
+| `clients/ratatui/src/types/generated/` | `tmai-core` からミラーされた Rust 型 |
+| `api-spec/` | OpenAPI spec / JSON Schema / MCP snapshot — すべて生成物 |
 
-CI rejects any PR where a human author touches these paths.  If you see a
-`Hand edits detected in bot-managed paths` failure on your PR, remove those
-file changes and open the issue in `tmai-core` instead.
+CI はこれらのパスを人間の著者が変更した PR を reject します。
+PR で `Hand edits detected in bot-managed paths` エラーが出た場合は、
+該当ファイルの変更を取り除き、代わりに `tmai-core` 側に issue を立ててください。
 
-### Bot PR recovery flow
+### Bot PR リカバリーフロー
 
-When a sync bot PR fails because consuming code references a renamed or removed
-generated symbol, apply a **minimal fix to the consuming code** — never edit the
-generated files themselves.
+同期 bot PR が、生成物でリネーム・削除されたシンボルを参照している消費コードのせいで失敗した場合は、**消費コードだけを最小限修正**してください。生成ファイル自体は絶対に編集しないでください。
 
-**Steps**
+**手順**
 
-1. Check out the bot branch locally:
+1. bot ブランチをローカルに checkout する：
    ```sh
    git fetch origin
    git checkout <bot-branch-name>
    ```
-2. Open only the consuming files that reference the broken symbol and update
-   the references.  Do **not** touch anything under `generated/` or `api-spec/`.
-3. Commit and push back to the same bot branch:
+2. 壊れたシンボルを参照している消費ファイルだけを開いて参照を更新する。
+   `generated/` や `api-spec/` 以下は **一切触らない**。
+3. 同じ bot ブランチにコミット・プッシュする：
    ```sh
-   git add <changed files>
+   git add <変更ファイル>
    git commit -m "fix: update consuming code for <symbol rename>"
    git push origin <bot-branch-name>
    ```
-4. CI re-runs automatically.  Merge once all jobs are green.
+4. CI が自動で再実行されます。全ジョブが green になったらマージしてください。
 
-**Worked example — PR #520 (`TaskMetaSnapshot` rename)**
+**実例 — PR #520 (`TaskMetaSnapshot` リネーム)**
 
-`tmai-core` renamed `TaskMetaEntry` → `TaskMetaSnapshot`.  The sync bot PR
-updated all generated files correctly, but `src/types/index.ts` still
-re-exported the old name and broke the TypeScript build.
+`tmai-core` が `TaskMetaEntry` → `TaskMetaSnapshot` にリネームしました。
+sync bot PR は生成ファイルを正しく更新しましたが、`src/types/index.ts` が
+旧名のまま再エクスポートしていたため TypeScript ビルドが壊れました。
 
-Fix applied in commit `0a1443f`:
+コミット `0a1443f` で適用した修正：
 ```diff
 // clients/react/src/types/index.ts
 -export type { TaskMetaEntry } from "./generated/TaskMetaSnapshot";
 +export type { TaskMetaSnapshot } from "./generated/TaskMetaSnapshot";
 ```
 
-Only `src/types/index.ts` (consuming code) was touched; the generated files
-were left untouched.
+変更したのは `src/types/index.ts`（消費コード）のみで、生成ファイルには一切手を加えていません。
 
-## Local development
+## ローカル開発
 
-Layout of the runtime when running locally:
+ローカル実行時のランタイム構成:
 
-- **tmai-core** owns an HTTP/SSE server on port **9876** (default, from `web.port` in `~/.config/tmai/config.toml`). It also serves the bundled WebUI from a `share/tmai/webui/` directory when one is found.
-- **clients/react** is a Vite app on port **1420** with `/api` proxied to `http://localhost:9876` (see `clients/react/vite.config.ts`).
+- **tmai-core** が port **9876** (`~/.config/tmai/config.toml` の `web.port` デフォルト) で HTTP/SSE サーバーを持ちます。`share/tmai/webui/` 相当のディレクトリが見つかれば、同梱 WebUI もここから配信します。
+- **clients/react** は port **1420** の Vite アプリで、`/api` を `http://localhost:9876` に proxy します (`clients/react/vite.config.ts` 参照)。
 
-Pick the workflow that matches what you're changing.
+変更内容に応じて以下のいずれかを選んでください。
 
-### (A) UI iteration — Vite HMR against an installed `tmai`
+### (A) UI 反復開発 — インストール済 `tmai` を背後に Vite HMR
 
-Fastest loop for React-only work. Uses whatever `tmai` is on your PATH (release tarball, `cargo install`, etc.) as the backend.
+React のみを触るときの最速ループ。PATH 上の `tmai` (release tarball / `cargo install` 等) をそのまま backend として使います。
 
 ```sh
 # Terminal 1 — backend
@@ -99,46 +96,46 @@ tmai
 
 # Terminal 2 — frontend (Vite dev, HMR)
 cd clients/react
-pnpm install   # first time only
+pnpm install   # 初回のみ
 pnpm dev       # http://localhost:1420
 ```
 
-Open `http://localhost:1420`. Vite proxies `/api`, `/api/events` (SSE), and `/api/agents/{id}/terminal` (WS) to the running `tmai`.
+`http://localhost:1420` を開いてください。Vite が `/api`、`/api/events` (SSE)、`/api/agents/{id}/terminal` (WS) を起動中の `tmai` に proxy します。
 
-### (B) UI + engine HEAD (collaborator-only)
+### (B) UI + engine HEAD (collaborator 限定)
 
-Same as (A) but swap the backend for a `cargo run` build of the private `tmai-core` repo. Requires collaborator access to `trust-delta/tmai-core`.
+(A) と同じですが、backend を private `tmai-core` repo の `cargo run` ビルドに差し替えます。`trust-delta/tmai-core` の collaborator 権限が必要です。
 
 ```sh
 # Terminal 1 — engine HEAD
 cd path/to/tmai-core
 cargo run --release
 
-# Terminal 2 — same as (A)
+# Terminal 2 — (A) と同じ
 cd clients/react && pnpm dev
 ```
 
-### (C) Production-shape check — built UI served by `tmai`
+### (C) 本番に近い形 — ビルド済 UI を `tmai` から配信
 
-Verify the bundle the release pipeline will ship.
+リリースパイプラインが配布する形を確認します。
 
 ```sh
 cd clients/react && pnpm build   # → clients/react/dist
 ```
 
-Then point `tmai` at the build with one of:
+次のいずれかで `tmai` にビルド成果物を読ませます:
 
-- **`web.webui_path` in `~/.config/tmai/config.toml`** — set it to the absolute path of `clients/react/dist`. `tmai-core` looks for `index.html` directly under that path.
-- **`TMAI_SHARE` env** — only useful when the directory layout matches the release tarball (`$TMAI_SHARE/webui/index.html`); for an ad-hoc `dist/` use `web.webui_path` instead.
+- **`~/.config/tmai/config.toml` の `web.webui_path`** — `clients/react/dist` の絶対パスを設定。`tmai-core` はこの直下の `index.html` を探します。
+- **`TMAI_SHARE` env** — release tarball 形式 (`$TMAI_SHARE/webui/index.html`) のときのみ有用。その場限りの `dist/` には `web.webui_path` を使ってください。
 
-Resolution order (`tmai-core/src/web/server.rs::resolve_webui_dir`): `TMAI_SHARE` → `web.webui_path` → binary-relative `<exe>/../share/tmai/webui/`.
+解決順序 (`tmai-core/src/web/server.rs::resolve_webui_dir`): `TMAI_SHARE` → `web.webui_path` → binary 相対 `<exe>/../share/tmai/webui/`。
 
-Open `http://localhost:9876`.
+`http://localhost:9876` を開いてください。
 
-## Issues
+## Issue
 
-File issues here for anything in the list above. For engine-side bugs, still open the issue here — we'll reproduce / triage and hand it over to the engine side if needed.
+上記リストの領域は本リポジトリに issue を提出してください。エンジン側のバグでも、まず本リポジトリに issue を立てていただければ再現・triage し、必要に応じてエンジン側へ引き継ぎます。
 
-## Language
+## 言語
 
-Issues and Discussions may be filed in English or Japanese.
+Issues / Discussions は英語・日本語どちらでも構いません。

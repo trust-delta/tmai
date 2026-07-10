@@ -1,43 +1,43 @@
-# The tmai charter — what this repo is for, and what its UI optimizes
+# tmai charter — このリポジトリは何のためにあり、その UI は何を最適化するのか
 
-This is the standing, public-facing statement of tmai's purpose: the anchor that UI and contract work in this repo derives from. It is not a record of a decision taken on a date — the retired record that first ratified this charter is kept as history in [`docs/archive/decisions/`](archive/decisions/2026-05-18-public-tmai-charter.md).
+これは tmai の目的についての、現に有効な公開の言明だ。このリポジトリの UI と契約の仕事は、ここから導かれる。ある日付に下された決定の*記録*ではない ― この charter を最初に批准した記録は退役し、[`docs/archive/decisions/`](archive/decisions/2026-05-18-public-tmai-charter.md) に歴史として残してある。
 
-## What tmai is
+## tmai とは何か
 
-**tmai is a Producer's exoskeleton and a human console.** It exists to make the operator invest their scarce review-attention into the highest-value judgments — not to maximize agent throughput. The operator talks to one Producer agent; tmai is the layer that lets that Producer manage work, and that surfaces, to the human, exactly what deserves attention.
+**tmai は Producer の外骨格であり、人間の窓だ。** それが在る理由は、operator の希少なレビュー注意を最も価値の高い判断に投じさせることであって、エージェントのスループットを最大化することではない。operator が話す相手は一人の Producer。tmai は、その Producer が仕事を回すための層であり、人間には*注意に値するものだけ*を差し出す層だ。
 
-## What tmai imposes — and why (the opinionated part)
+## tmai が課すもの ― そしてなぜか(意見の入った部分)
 
-tmai is **opinionated**, and the opinion is load-bearing, not cosmetic. Adopting tmai on a project means adopting a discipline it will not let you quietly skip:
+tmai は **opinionated** だ。その意見は装飾ではなく load-bearing で、あるプロジェクトに tmai を採り入れることは、それが黙って飛ばすことを許さない規律を採り入れることを意味する:
 
-- **Purpose and means are kept apart.** Where a piece of work is *going* — the outcome you commit to, the thing you'll bear if it's wrong — is written by you, and kept distinct from *how it is currently being pursued*, which the Producer maintains and may rewrite at any time. A means never quietly becomes the commitment. The apparatus that currently holds both is [Aim](aim.md) — a means itself, and replaceable.
-- **Only you declare arrival.** The Producer drafts the means, runs it, and reports what it has implemented — a claim, checkable and fallible. It never declares that the *purpose* has been met. The irreducibly-human act stays human by construction, not by policy: there is no "the agent decided for me."
-- **Your review attention is rationed, not optimized away.** tmai routes only the judgments that genuinely need you, and will not pretend a glance-and-approve is a real review.
+- **目的と手段は分けて置かれる。** 仕事が*どこへ向かうか* ― あなたがコミットし、外れたなら引き受ける outcome ― を書くのはあなただ。*今それをどう追っているか*は Producer が保守し、いつでも書き換えてよい。手段が黙ってコミットメントに成り代わることはない。両者を現在収めている装置が [Aim](aim.md) ― それ自体が手段であり、差し替えられる。
+- **到着を宣言するのはあなただけだ。** Producer は手段を起草し、走らせ、*自分が何を実装したか*を報告する ― 検証可能で、誤りうる主張として。*目的が満たされた*とは決して宣言しない。分解不能に人間の act は、規約によってではなく構造として人間の側に残る。「エージェントが代わりに決めた」は起こりえない。
+- **あなたのレビュー注意は配給される。最適化して消しはしない。** tmai が回すのは本当にあなたを要する判断だけであり、ひと目見て承認することを本物のレビューだと偽らない。
 
-**Why impose this instead of just going fast?** Because the scarce resource is your judgment, not agent compute. A tool that makes the *wrong* workflow effortless — approve everything, fan out endlessly, let the agent bless its own work — spends that scarce resource exactly where it should be protected. The discipline above is the minimum that keeps the human bearing the commitments while the agent carries the mechanism. (The fuller reasoning drives the engine's design and stays with it — private under the same motivation-protection stance stated below; what is stated here is the part you, as an operator, are signing up for.)
+**なぜ速く行かず、これを課すのか。** 希少な資源はあなたの判断であって、エージェントの計算量ではないからだ。*間違った*ワークフローを楽にしてしまう道具 ― 全部承認、際限のない fan out、エージェントに自分の仕事を祝福させる ― は、守るべきまさにその一点で希少資源を蕩尽する。上の規律は、機構をエージェントが担うあいだ、コミットメントを人間が引き受け続けるための最小限だ。(踏み込んだ理路はエンジンの設計を駆動しており、エンジンと共に private に留まる ― 下に述べる motivation 保護と同じスタンスによる。ここに書いてあるのは、operator としてのあなたが署名する部分だけだ。)
 
-**This is a worldview, offered — not a universal truth.** If what you want is to maximize how much the agent does unattended, tmai is deliberately the wrong tool: it keeps a seam where *you* stay in the loop, because that seam is where it believes the value lives. That is a self-selecting stance — stated up front so you can decide before adopting it, rather than discover it by friction.
+**これは差し出された一つの世界観であって、普遍の真理ではない。** 無人のままエージェントにどれだけやらせるかを最大化したいのなら、tmai は意図して間違った道具だ ― *あなた*がループに残る seam を保つから。価値はその seam に宿ると信じている。これは自己選択的な立場であり、摩擦の中で気付くのではなく採る前に決められるよう、先に言明してある。
 
-## What this (public) repo is for
+## この(公開)リポジトリは何を担うか
 
-This repo holds the **presentation and contract half** of that goal: `clients/react/` (the Producer console WebUI), `clients/ratatui/` (the TUI), `api-spec/` (the wire contract), and the release pipeline. The attention-investment goal is realized along a pipeline: the engine produces and curates the information; **this repo decides what subset of it the operator sees, when, and in what framing, cadence, and salience.**
+このリポジトリが持つのは、その目標の**提示と契約の半分**だ: `clients/react/`(Producer コンソール WebUI)、`clients/ratatui/`(TUI)、`api-spec/`(ワイヤ契約)、そしてリリースパイプライン。注意投資という目標はパイプラインとして実現される ― エンジンが情報を生み、選り分ける。そして**そのどれを、いつ、どんな枠組み・調子・目立ち方で operator が見るのかを決めるのが、このリポジトリだ。**
 
-That presentation judgment is not incidental. Showing everything the engine can produce is the *opposite* of protecting attention. *What / when / how surfaced* is a large part of whether scarce attention is actually protected — so this repo is a first-class part of the goal, not a thin renderer.
+この提示の判断は付随物ではない。エンジンが出せる全てを見せることは、注意を守ることの*対極*だ。*何を / いつ / どう surface するか*が、希少な注意が実際に守られるかどうかを大きく決める ― だからここは薄いレンダラではなく、目標の一級の一部だ。
 
-## The UI side's responsibility
+## UI 側の責務
 
-Build presentation that is **faithfully derived from an understanding of tmai's principles** — comprehension first, then realization. UI work here should be traceable to *why* (the purpose above and the principles it serves), not invented locally.
+**tmai の原則の理解から忠実に導かれた**提示を作ること。まず了解し、それから実現する。ここでの UI の仕事は*なぜ*(上の目的と、それが仕える原則)へ辿れねばならず、局所で発明してはならない。
 
-## Authority stance (why this repo is intentionally record-light)
+## authority の所在(なぜここは意図して記録が薄いのか)
 
-The **design authority** for tmai's mechanisms — the *how* — is held in the private [`tmai-core`](https://github.com/trust-delta/tmai-core) repo, by deliberate design. This is the same, already-public reason `tmai-core` itself is private: it protects the author's motivation (concealed implementation insight), not commercial IP. A consequence, by design and not by neglect:
+tmai の機構 ― *how* ― の**設計権限**は、意図的に private な [`tmai-core`](https://github.com/trust-delta/tmai-core) に置かれている。`tmai-core` 自体が private である、既に公開されたのと同じ理由による ― それが守るのは作者の motivation(隠された実装の洞察)であって、商業的 IP ではない。設計上の帰結であって、怠慢の結果ではないこと:
 
-- This repo **does not** carry "design-driver" records (records of the form *"we need the engine to do X"*). Those would leak the private *how* through the public *what-was-asked*, so they stay private.
-- What this repo carries is therefore thin: **this charter** (the purpose) and **[Aim](aim.md)** (the means that purpose currently reaches for). Both are public-appropriate — they are the *what*, never the engine's *how*. Everything under [`docs/archive/`](archive/) is a retired audit trail, not current direction.
+- ここは「design-driver」な記録 ― *「エンジンに X をさせる必要がある」*という形の記録 ― を**持たない**。公開された*何が求められたか*を通して private な *how* が漏れるので、それらは private に留まる。
+- ここが持つものは、従って薄い: **この charter**(目的)と **[Aim](aim.md)**(その目的が今のところ手に取っている手段)。どちらも公開に適する ― *what* であって、エンジンの *how* ではない。[`docs/archive/`](archive/) の下は全て退役した監査証跡であり、現行の方向ではない。
 
-So the asymmetry (design records live in `tmai-core`) is **by design**. What this charter guarantees is that the public repo's *goal is visible here* — it does not "exist only in an invisible part."
+だからこの非対称(設計記録は `tmai-core` にある)は**意図的**だ。この charter が保証するのは、公開リポジトリの*目標がここに見えている*こと ― それは「見えない部分にしか存在しない」のではない。
 
-## What this is / is not
+## これは何であり、何でないか
 
-- **Is**: the comprehension anchor UI/contract work derives from; the public statement of this repo's purpose.
-- **Is not**: a place to record "the engine should do X" (private by design); not an implementation spec. The mechanism by which private design intent reaches UI work is a separate, co-designed record (it does not live here).
+- **である**: UI と契約の仕事が導かれる了解の anchor。このリポジトリの目的の公開された言明。
+- **でない**: 「エンジンは X すべき」を記録する場所(設計上 private)。実装仕様でもない。private な設計意図が UI の仕事へ届く機構は、別の、共同設計された記録であり、それはここには住まない。
