@@ -6,7 +6,7 @@ tmai のコンソールは、ツールが代われない二つのことをあな
 
 ## Aim が仕える原則
 
-tmai は一つの賭けの上に建っている: 希少なのはあなたの判断であって、エージェントの計算量ではない([charter](decisions/2026-05-18-public-tmai-charter.md))。その判断のうち二つの act は分解不能にあなたのもので、どれだけ強いモデルでも取り除けない:
+tmai は一つの賭けの上に建っている: 希少なのはあなたの判断であって、エージェントの計算量ではない([charter](charter.ja.md))。その判断のうち二つの act は分解不能にあなたのもので、どれだけ強いモデルでも取り除けない:
 
 - **目的地を名指す** ― あなたがコミットする outcome、間違っていたら引き受けることになるもの
 - **到着を宣言する** ― 仕事が本当にそこへ着いたと判断すること。本物の検証に裏打ちされ、ちらっと見や green check ではなく
@@ -43,4 +43,4 @@ Aim と spec は形を共有する ― どちらも intent を書き留め、仕
 
 ---
 
-関連: [公開 charter](decisions/2026-05-18-public-tmai-charter.md)(本リポジトリの purpose anchor)、[README](../README.ja.md) の「tmai は何のためにあるか」。
+関連: [公開 charter](charter.ja.md)(本リポジトリの purpose anchor)、[README](../README.ja.md) の「tmai は何のためにあるか」。

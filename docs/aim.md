@@ -6,7 +6,7 @@ This mirrors the crossing-the-street picture in the [README](../README.md): you 
 
 ## The principle Aim serves
 
-tmai is built on one wager: the scarce resource is your judgment, not agent compute (see the [charter](decisions/2026-05-18-public-tmai-charter.md)). Two acts in that judgment are irreducibly yours — no stronger model removes them:
+tmai is built on one wager: the scarce resource is your judgment, not agent compute (see the [charter](charter.md)). Two acts in that judgment are irreducibly yours — no stronger model removes them:
 
 - **naming the destination** — the outcome you're committing to, the thing you'll bear if it's wrong;
 - **declaring arrival** — deciding the work actually got there, backed by real verification and not by a glance or a green check.
@@ -43,4 +43,4 @@ Aim and a spec share a shape — both write down an intent and check work agains
 
 ---
 
-See also: the [public charter](decisions/2026-05-18-public-tmai-charter.md) (this repo's purpose anchor) and the "What tmai is for" section of the [README](../README.md).
+See also: the [public charter](charter.md) (this repo's purpose anchor) and the "What tmai is for" section of the [README](../README.md).
