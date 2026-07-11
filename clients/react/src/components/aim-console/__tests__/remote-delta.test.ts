@@ -42,6 +42,7 @@ function pr(overrides: Partial<PrSummaryWire> = {}): PrSummaryWire {
     merged_at: null,
     closed_at: null,
     ci_completed_at: null,
+    last_synced_at: null,
     ...overrides,
   };
 }
@@ -56,6 +57,7 @@ function issue(overrides: Partial<IssueSummaryWire> = {}): IssueSummaryWire {
     assignees: [],
     created_at: null,
     closed_at: null,
+    last_synced_at: null,
     ...overrides,
   };
 }
