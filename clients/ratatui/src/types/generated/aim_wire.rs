@@ -12,13 +12,10 @@ use std::collections::HashMap;
 pub struct AimWire {
     pub aim: String,
     pub body: String,
-    pub depends_on: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub drift: Option<AimDriftWire>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent: Option<Value>,
-    pub related: Vec<String>,
-    pub serves: Vec<String>,
     pub slug: String,
     pub state: AimState,
     #[serde(skip_serializing_if = "Option::is_none")]

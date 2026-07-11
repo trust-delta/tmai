@@ -164,7 +164,7 @@
           "aims"
         ],
         "summary": "Documentation stub for `GET /api/units/{unit}/aims`.",
-        "description": "JSON projection of the unit's aim-tree records (`docs/aims/`) — the aim-tree\nread surface (graduation Stage 1; observation\n`2026-06-05-aim-tree-write-first-record-structure.md`). Every\n`docs/aims/<slug>.md` record, grouped per repo, surfacing the full node: the\nhuman bearing (`aim`), the tree skeleton (`parent`), the lifecycle `state`\n(`open | done | dead`), the DAG cross-edges (`depends_on` / `serves` /\n`related`, slugs), and the agent-authored interior (`body`, the R-panel\ndetail pane). Each per-repo group carries `repo_root` as the marker\n`repoPath` (#493). Aim slugs are NON-dated stable identities (re-parenting\nedits `parent:`, never the filename). Read-only — write/persist + drift-marks\nare later graduation stages.",
+        "description": "JSON projection of the unit's aim-tree records (`docs/aims/`) — the aim-tree\nread surface (graduation Stage 1; observation\n`2026-06-05-aim-tree-write-first-record-structure.md`). Every\n`docs/aims/<slug>.md` record, grouped per repo, surfacing the full node: the\nhuman bearing (`aim`), the tree skeleton (`parent`), the lifecycle `state`\n(`open | done | dead`), and the agent-authored interior (`body`, the R-panel\ndetail pane). Each per-repo group carries `repo_root` as the marker\n`repoPath` (#493). Aim slugs are NON-dated stable identities (re-parenting\nedits `parent:`, never the filename). Read-only — write/persist + drift-marks\nare later graduation stages.",
         "operationId": "get_aims_doc",
         "parameters": [
           {
@@ -256,7 +256,7 @@
           "aims"
         ],
         "summary": "Documentation stub for `PUT /api/units/{unit}/aims/{slug}`.",
-        "description": "Edit an existing aim node's frontmatter — **aim / parent / state only**\n(aim-tree graduation Stage 2-A; issue #501). The existing cross-edges\n(`depends_on` / `serves` / `related`) and the body are preserved\nbyte-for-byte; cross-edge editing is a deferred increment. Authority is\noperator-only, *soft* (no draft/accept gate beyond the endpoint auth).\nAbsent slug ⇒ `404`. Returns the updated node. Real handler:\n`crate::web::api::edit_aim`.",
+        "description": "Edit an existing aim node's frontmatter — **aim / parent / state only**\n(aim-tree graduation Stage 2-A; issue #501). The body (and any unmanaged\nfrontmatter line) is preserved byte-for-byte. Authority is operator-only,\n*soft* (no draft/accept gate beyond the endpoint auth).\nAbsent slug ⇒ `404`. Returns the updated node. Real handler:\n`crate::web::api::edit_aim`.",
         "operationId": "edit_aim_doc",
         "parameters": [
           {
@@ -720,7 +720,7 @@
       },
       "AimEditRequest": {
         "type": "object",
-        "description": "`PUT /api/units/{unit}/aims/{slug}` request — the operator's frontmatter edit\n(aim-tree graduation Stage 2-A). Carries **only** the three editable fields;\nthe cross-edges (`depends_on` / `serves` / `related`) and the body are\npreserved server-side (cross-edge editing is a deferred increment). Authority\nis operator-only, *soft* — like the in-tmai merge button, there is no\ndraft/accept gate beyond the normal endpoint auth.",
+        "description": "`PUT /api/units/{unit}/aims/{slug}` request — the operator's frontmatter edit\n(aim-tree graduation Stage 2-A). Carries **only** the three editable fields;\nthe body (and any unmanaged frontmatter line) is preserved server-side.\nAuthority is operator-only, *soft* — like the in-tmai merge button, there is\nno draft/accept gate beyond the normal endpoint auth.",
         "required": [
           "aim",
           "state"
@@ -754,14 +754,11 @@
       },
       "AimWire": {
         "type": "object",
-        "description": "One aim node projected to the wire — the human-side complement of the\ninternal [`crate::workbench::aim::AimRecord`]. Carries the full node: the\nhuman bearing (`aim`), the tree skeleton (`parent`), the DAG cross-edges\n(`depends_on` / `serves` / `related`, slugs), the lifecycle `state`, and the\nagent-authored interior (`body`).\n\nField names are snake_case on the wire (mirroring the sibling views'\n`repo_root` etc.); the cross-edge keys (`depends_on`) match the corpus\nfrontmatter spelling, so the wire and the records stay one-to-one.",
+        "description": "One aim node projected to the wire — the human-side complement of the\ninternal [`crate::workbench::aim::AimRecord`]. Carries the full node: the\nhuman bearing (`aim`), the tree skeleton (`parent`), the lifecycle `state`,\nand the agent-authored interior (`body`).\n\nField names are snake_case on the wire (mirroring the sibling views'\n`repo_root` etc.), so the wire and the records stay one-to-one.",
         "required": [
           "slug",
           "aim",
           "state",
-          "depends_on",
-          "serves",
-          "related",
           "body"
         ],
         "properties": {
@@ -772,13 +769,6 @@
           "body": {
             "type": "string",
             "description": "The markdown interior (everything after the frontmatter), for the\nR-panel detail pane. May be empty (a frontmatter-only node). Kept verbatim."
-          },
-          "depends_on": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "DAG cross-edges (slugs): \"depends on\". Empty when absent."
           },
           "drift": {
             "oneOf": [
@@ -797,20 +787,6 @@
               "null"
             ],
             "description": "Parent node slug (tree skeleton); `null` for a root node."
-          },
-          "related": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "DAG cross-edges (slugs): loose relations. Empty when absent."
-          },
-          "serves": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "DAG cross-edges (slugs): \"serves\". Empty when absent."
           },
           "slug": {
             "type": "string",
@@ -3361,7 +3337,7 @@
     },
     {
       "name": "aims",
-      "description": "Aims view — the aim-tree read surface (graduation Stage 1; observation 2026-06-05-aim-tree-write-first-record-structure). A recursive purpose=means tree of aim nodes (docs/aims/<slug>.md, NON-dated stable slugs) coexisting with decisions / approaches. Surfaces every record (slug / aim / parent / state: open|done|dead / depends_on|serves|related DAG edges / body) grouped per repo, carrying repo_root as the marker repoPath. Read-only; write/persist + drift-marks are later stages."
+      "description": "Aims view — the aim-tree read surface (graduation Stage 1; observation 2026-06-05-aim-tree-write-first-record-structure). A recursive purpose=means tree of aim nodes (docs/aims/<slug>.md, NON-dated stable slugs) coexisting with decisions / approaches. Surfaces every record (slug / aim / parent / state: open|done|dead / body) grouped per repo, carrying repo_root as the marker repoPath. Read-only; write/persist + drift-marks are later stages."
     },
     {
       "name": "prs",

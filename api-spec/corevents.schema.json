@@ -153,7 +153,7 @@
       "type": "object"
     },
     "AimEditRequest": {
-      "description": "`PUT /api/units/{unit}/aims/{slug}` request — the operator's frontmatter edit\n(aim-tree graduation Stage 2-A). Carries **only** the three editable fields;\nthe cross-edges (`depends_on` / `serves` / `related`) and the body are\npreserved server-side (cross-edge editing is a deferred increment). Authority\nis operator-only, *soft* — like the in-tmai merge button, there is no\ndraft/accept gate beyond the normal endpoint auth.",
+      "description": "`PUT /api/units/{unit}/aims/{slug}` request — the operator's frontmatter edit\n(aim-tree graduation Stage 2-A). Carries **only** the three editable fields;\nthe body (and any unmanaged frontmatter line) is preserved server-side.\nAuthority is operator-only, *soft* — like the in-tmai merge button, there is\nno draft/accept gate beyond the normal endpoint auth.",
       "properties": {
         "aim": {
           "description": "The human-authored 1-line bearing.",
@@ -187,7 +187,7 @@
       "type": "string"
     },
     "AimWire": {
-      "description": "One aim node projected to the wire — the human-side complement of the\ninternal [`crate::workbench::aim::AimRecord`]. Carries the full node: the\nhuman bearing (`aim`), the tree skeleton (`parent`), the DAG cross-edges\n(`depends_on` / `serves` / `related`, slugs), the lifecycle `state`, and the\nagent-authored interior (`body`).\n\nField names are snake_case on the wire (mirroring the sibling views'\n`repo_root` etc.); the cross-edge keys (`depends_on`) match the corpus\nfrontmatter spelling, so the wire and the records stay one-to-one.",
+      "description": "One aim node projected to the wire — the human-side complement of the\ninternal [`crate::workbench::aim::AimRecord`]. Carries the full node: the\nhuman bearing (`aim`), the tree skeleton (`parent`), the lifecycle `state`,\nand the agent-authored interior (`body`).\n\nField names are snake_case on the wire (mirroring the sibling views'\n`repo_root` etc.), so the wire and the records stay one-to-one.",
       "properties": {
         "aim": {
           "description": "The human-authored 1-line anchor / bearing.",
@@ -196,13 +196,6 @@
         "body": {
           "description": "The markdown interior (everything after the frontmatter), for the\nR-panel detail pane. May be empty (a frontmatter-only node). Kept verbatim.",
           "type": "string"
-        },
-        "depends_on": {
-          "description": "DAG cross-edges (slugs): \"depends on\". Empty when absent.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
         },
         "drift": {
           "oneOf": [
@@ -221,20 +214,6 @@
             "string",
             "null"
           ]
-        },
-        "related": {
-          "description": "DAG cross-edges (slugs): loose relations. Empty when absent.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "serves": {
-          "description": "DAG cross-edges (slugs): \"serves\". Empty when absent.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
         },
         "slug": {
           "description": "Filename stem — the stable, NON-dated node identity (e.g. `aim-system`).",
@@ -260,9 +239,6 @@
         "slug",
         "aim",
         "state",
-        "depends_on",
-        "serves",
-        "related",
         "body"
       ],
       "type": "object"

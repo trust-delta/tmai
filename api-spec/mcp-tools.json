@@ -81,7 +81,7 @@
     }
   },
   {
-    "description": "Get the unit's aim-tree navigation (per repo: tree / DAG edges / drift / working_delta + per-node progress flag: some-todo|all-done|no-process|unknown). Body-less, read-only — pull current aim state before touching an aim or when code lands.",
+    "description": "Get the unit's aim-tree navigation (per repo: tree / drift / working_delta + per-node progress flag: some-todo|all-done|no-process|unknown). Body-less, read-only — pull current aim state before touching an aim or when code lands.",
     "name": "get_aims",
     "parameters_schema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
