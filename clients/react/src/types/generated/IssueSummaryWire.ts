@@ -18,4 +18,15 @@ created_at: string | null,
  * Close time (ISO-8601) — `null` while open. State-transition vocab
  * event (#524).
  */
-closed_at: string | null, };
+closed_at: string | null, 
+/**
+ * Wall-clock time (ISO-8601) of the last *successful* `gh` sync that
+ * produced this row — the data-freshness anchor for the hub's
+ * "· 2分前" label (#606 §2, aim `pr-issue-ci` PROCESS ⑤⑥). Distinct from
+ * the #524 vocab-event times above ("when the issue changed"): this is
+ * "when we last actually pulled from GitHub". Advanced only on a real
+ * fetch, never on a 30s-TTL cache hit, so the label never claims the data
+ * is fresher than it is. `Option` + `serde(default)` for the same
+ * forward-compat discipline as the vocab-event fields.
+ */
+last_synced_at: string | null, };

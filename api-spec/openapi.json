@@ -2374,6 +2374,13 @@
               "$ref": "#/components/schemas/IssueLabelWire"
             }
           },
+          "last_synced_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Wall-clock time (ISO-8601) of the last *successful* `gh` sync that\nproduced this row — the data-freshness anchor for the hub's\n\"· 2分前\" label (#606 §2, aim `pr-issue-ci` PROCESS ⑤⑥). Distinct from\nthe #524 vocab-event times above (\"when the issue changed\"): this is\n\"when we last actually pulled from GitHub\". Advanced only on a real\nfetch, never on a 30s-TTL cache hit, so the label never claims the data\nis fresher than it is. `Option` + `serde(default)` for the same\nforward-compat discipline as the vocab-event fields."
+          },
           "number": {
             "type": "integer",
             "format": "int64",
@@ -2501,6 +2508,13 @@
           },
           "is_draft": {
             "type": "boolean"
+          },
+          "last_synced_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Wall-clock time (ISO-8601) of the last *successful* `gh` sync that\nproduced this row — the data-freshness anchor for the hub's\n\"· 2分前\" label (#606 §2, aim `pr-issue-ci` PROCESS ⑤⑥). Distinct from\nthe #524 vocab-event times above (\"when the PR changed\"): this is \"when\nwe last actually pulled from GitHub\". Advanced only on a real fetch,\nnever on a 30s-TTL cache hit, so the label never claims the data is\nfresher than it is. `Option` + `serde(default)` for the same\nforward-compat discipline as the vocab-event fields."
           },
           "merge_commit_sha": {
             "type": [

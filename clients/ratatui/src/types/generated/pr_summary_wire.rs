@@ -27,6 +27,8 @@ pub struct PrSummaryWire {
     pub head_sha: String,
     pub is_draft: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_synced_at: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub merge_commit_sha: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub merged_at: Option<Value>,

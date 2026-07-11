@@ -16,6 +16,8 @@ pub struct IssueSummaryWire {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<Value>,
     pub labels: Vec<IssueLabelWire>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_synced_at: Option<Value>,
     pub number: i64,
     pub state: String,
     pub title: String,
