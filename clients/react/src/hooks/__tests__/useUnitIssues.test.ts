@@ -43,6 +43,7 @@ function response(unit: string, issueCount: number): UnitIssuesResponse {
           assignees: [],
           created_at: null,
           closed_at: null,
+          last_synced_at: null,
         })),
       },
     ],

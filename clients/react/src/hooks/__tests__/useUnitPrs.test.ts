@@ -55,6 +55,7 @@ function response(unit: string, prCount: number): UnitPrsResponse {
           merged_at: null,
           closed_at: null,
           ci_completed_at: null,
+          last_synced_at: null,
         })),
       },
     ],
