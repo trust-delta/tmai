@@ -1291,7 +1291,7 @@ export const api = {
     }),
 
   // Aims view (tmai-core #500) — every aim record per repo, the full node
-  // (slug / aim / parent / state / depends_on / serves / related / body).
+  // (slug / aim / parent / state / body).
   // The R panel reconstructs the purpose=means tree client-side (by
   // parent/slug) and renders the aim-tree read view. Aims currently live
   // only in the `tmai-core` repo, but the wire is already multi-repo
@@ -1313,9 +1313,8 @@ export const api = {
     }),
 
   // Edit a node's frontmatter — `aim` / `parent` / `state` ONLY. The backend
-  // preserves the body and the cross-edges (`depends_on` / `serves` / `related`)
-  // byte-for-byte (cross-edge editing is a deferred increment). `404` if the
-  // slug is absent.
+  // preserves the body — including its `[[slug]]` cross-edges — byte-for-byte.
+  // `404` if the slug is absent.
   editAim: (unit: string, slug: string, body: AimEditRequest) =>
     apiFetch<AimWire>(`/units/${encodeURIComponent(unit)}/aims/${encodeURIComponent(slug)}`, {
       method: "PUT",

@@ -4,10 +4,9 @@ import type { AimState } from "./AimState";
 /**
  * `PUT /api/units/{unit}/aims/{slug}` request — the operator's frontmatter edit
  * (aim-tree graduation Stage 2-A). Carries **only** the three editable fields;
- * the cross-edges (`depends_on` / `serves` / `related`) and the body are
- * preserved server-side (cross-edge editing is a deferred increment). Authority
- * is operator-only, *soft* — like the in-tmai merge button, there is no
- * draft/accept gate beyond the normal endpoint auth.
+ * the body (and any unmanaged frontmatter line) is preserved server-side.
+ * Authority is operator-only, *soft* — like the in-tmai merge button, there is
+ * no draft/accept gate beyond the normal endpoint auth.
  */
 export type AimEditRequest = { 
 /**

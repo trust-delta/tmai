@@ -6,13 +6,11 @@ import type { AimWorkingDeltaWire } from "./AimWorkingDeltaWire";
 /**
  * One aim node projected to the wire — the human-side complement of the
  * internal [`crate::workbench::aim::AimRecord`]. Carries the full node: the
- * human bearing (`aim`), the tree skeleton (`parent`), the DAG cross-edges
- * (`depends_on` / `serves` / `related`, slugs), the lifecycle `state`, and the
- * agent-authored interior (`body`).
+ * human bearing (`aim`), the tree skeleton (`parent`), the lifecycle `state`,
+ * and the agent-authored interior (`body`).
  *
  * Field names are snake_case on the wire (mirroring the sibling views'
- * `repo_root` etc.); the cross-edge keys (`depends_on`) match the corpus
- * frontmatter spelling, so the wire and the records stay one-to-one.
+ * `repo_root` etc.), so the wire and the records stay one-to-one.
  */
 export type AimWire = { 
 /**
@@ -31,18 +29,6 @@ parent: string | null,
  * Lifecycle state — `open` / `done` / `dead`.
  */
 state: AimState, 
-/**
- * DAG cross-edges (slugs): "depends on". Empty when absent.
- */
-depends_on: Array<string>, 
-/**
- * DAG cross-edges (slugs): "serves". Empty when absent.
- */
-serves: Array<string>, 
-/**
- * DAG cross-edges (slugs): loose relations. Empty when absent.
- */
-related: Array<string>, 
 /**
  * The markdown interior (everything after the frontmatter), for the
  * R-panel detail pane. May be empty (a frontmatter-only node). Kept verbatim.

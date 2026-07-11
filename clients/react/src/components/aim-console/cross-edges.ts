@@ -13,9 +13,9 @@
 //
 // Operator-ratified invariants this module embodies (mirrors `resignation.ts`):
 //   - ZERO new asserted fields — the edges are read out of `body`, already on
-//     the wire. The frontmatter `depends_on` / `serves` / `related` arrays are
-//     deliberately NOT used: the aim puts the edge in the body, and the live
-//     corpus authors it there (a `# DAG` bullet), leaving those arrays empty.
+//     the wire. The frontmatter carries only the bearing (`aim` / `parent` /
+//     `state`), never cross-edges: the aim puts the edge in the body, and the
+//     live corpus authors it there (a `# DAG` bullet).
 //   - Facts, not appraisals — this lists adjacency; it never scores, ranks by
 //     importance, or judges an edge. First-appearance / wire (slug-sorted)
 //     order is preserved.

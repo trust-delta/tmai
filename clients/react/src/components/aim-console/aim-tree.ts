@@ -214,8 +214,8 @@ export function bySlugMap(nodes: readonly AimWire[]): Map<string, AimWire> {
   return new Map(nodes.map((n) => [n.slug, n] as const));
 }
 
-// Every descendant of `slug` through `parent` edges (NOT `depends_on` — the
-// cross-edge is a shared-means link, deliberately out of the cascade set). The
+// Every descendant of `slug` through `parent` edges (NOT the body `[[slug]]`
+// cross-edges — a shared-means link, deliberately out of the cascade set). The
 // `seen` guard keeps the walk safe against a malformed `parent` cycle. Used to
 // forbid an ancestor re-parenting onto its own subtree (cycle guard in edit).
 export function descendantsOf(slug: string, childrenOf: Map<string, AimWire[]>): Set<string> {
