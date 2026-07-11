@@ -59,9 +59,6 @@ function aim(overrides: Partial<AimWire> & Pick<AimWire, "slug">): AimWire {
     aim: `aim ${overrides.slug}`,
     parent: null,
     state: "open",
-    depends_on: [],
-    serves: [],
-    related: [],
     body: "",
     drift: null,
     working_delta: null,
@@ -73,13 +70,13 @@ function aim(overrides: Partial<AimWire> & Pick<AimWire, "slug">): AimWire {
 //   root-a
 //     child-1
 //       grand-1
-//     child-2  (depends_on: [child-1])
+//     child-2
 //   root-b
 const NODES: AimWire[] = [
   aim({ slug: "root-a" }),
   aim({ slug: "child-1", parent: "root-a" }),
   aim({ slug: "grand-1", parent: "child-1" }),
-  aim({ slug: "child-2", parent: "root-a", depends_on: ["child-1"] }),
+  aim({ slug: "child-2", parent: "root-a" }),
   aim({ slug: "root-b" }),
 ];
 
@@ -90,12 +87,6 @@ describe("buildChildren", () => {
     expect(childrenOf.get("child-1")?.map((n) => n.slug)).toEqual(["grand-1"]);
     expect(childrenOf.get("grand-1")).toBeUndefined();
     expect(childrenOf.get("root-b")).toBeUndefined();
-  });
-
-  it("does not turn a depends_on edge into a parent edge", () => {
-    const childrenOf = buildChildren(NODES);
-    // child-2 depends_on child-1, but only `parent` builds the tree.
-    expect(childrenOf.get("child-1")?.map((n) => n.slug)).toEqual(["grand-1"]);
   });
 });
 
@@ -116,7 +107,7 @@ describe("descendantsOf (the re-parent cycle guard)", () => {
     expect(descendantsOf("root-a", childrenOf)).toEqual(new Set(["child-1", "grand-1", "child-2"]));
   });
 
-  it("does NOT follow depends_on cross-edges", () => {
+  it("returns an empty set for a leaf node", () => {
     const childrenOf = buildChildren(NODES);
     expect(descendantsOf("child-2", childrenOf)).toEqual(new Set());
   });

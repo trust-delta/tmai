@@ -1,7 +1,7 @@
 // Polling hook for the unit's aim-tree view (R panel's ◎ Aims section),
 // consuming `GET /api/units/{unit}/aims` (tmai-core #500): every aim record
 // in each repo's `docs/aims/`, carrying the full node (`slug` / `aim` /
-// `parent` / `state` / `depends_on` / `serves` / `related` / `body`).
+// `parent` / `state` / `body`).
 //
 // The aim-tree twin of `useApproaches` — same shape,
 // same cadence. Aims change on the timescale an operator edits an anchor or
