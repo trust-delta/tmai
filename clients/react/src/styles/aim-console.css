@@ -1581,6 +1581,22 @@
   background: #0f1818;
   border-left-color: var(--cyan);
 }
+/* drag-and-drop re-parent (Tree mode). The source dims; a valid drop target
+   gets an inset cyan ring — the "drop here" reuse of the --cyan select/structure
+   accent, stronger than `.sel` so it reads as an action, not a selection. Uses
+   theme-aware vars only, so no per-theme override is needed. */
+.aim-console .ac-r[draggable="true"] {
+  cursor: grab;
+}
+.aim-console .ac-r.dnd-src {
+  opacity: 0.45;
+  cursor: grabbing;
+}
+.aim-console .ac-r.dnd-over,
+.aim-console .ac-repohead.dnd-over {
+  background: var(--cyan-d);
+  box-shadow: inset 0 0 0 1px var(--cyan);
+}
 .aim-console .ac-gut {
   width: 2px;
   align-self: stretch;

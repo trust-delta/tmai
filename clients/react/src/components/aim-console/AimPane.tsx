@@ -38,6 +38,7 @@
 import {
   type CSSProperties,
   type FormEvent,
+  type DragEvent as ReactDragEvent,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
   useCallback,
@@ -118,6 +119,50 @@ function writeErrorMessage(e: unknown): string {
 const repoKey = (r: RepoAimsWire): string => `repo:${r.repo_root}`;
 
 const EMPTY_FORBIDDEN: ReadonlySet<string> = new Set<string>();
+
+// ── drag-and-drop re-parent (Tree mode) ───────────────────────────────
+//
+// Dragging an aim row onto another node makes it that node's child; dropping
+// onto its own repo head re-roots it (`parent: null`). The drag source carries
+// the node's current `aim`+`state` because `editAim` rewrites the whole
+// frontmatter triple — the drop changes only `parent`. The cycle guard reuses
+// `descendantsOf` (the same primitive the modal's parent-select filters on): a
+// node can't be re-homed onto itself or its own subtree. Scope is a single repo
+// — a cross-repo parent isn't representable today (RFC tmai-core#608) — so a
+// drop target must share the drag's repo. The confirm gate keeps the mutation
+// deliberate (parent is a human-owned frontmatter field), and the modal's
+// parent-`<select>` stays the keyboard / a11y path this only augments.
+interface DragState {
+  slug: string;
+  repoRoot: string;
+  currentParent: string | null;
+  forbidden: ReadonlySet<string>;
+  aim: string;
+  state: AimState;
+}
+interface PendingMove {
+  slug: string;
+  aim: string;
+  state: AimState;
+  newParent: string | null;
+  targetLabel: string;
+}
+interface AimDnd {
+  dragSlug: string | null;
+  overKey: string | null; // "n:<slug>" | "r:<repoRoot>" — the highlighted target
+  begin: (slug: string) => void;
+  end: () => void;
+  canDropNode: (slug: string, repoRoot: string) => boolean;
+  canDropRoot: (repoRoot: string) => boolean;
+  hover: (key: string | null) => void;
+  dropNode: (slug: string, repoRoot: string) => void;
+  dropRoot: (repoRoot: string) => void;
+}
+
+// Clip long aim text for the confirm sentence.
+function clipAim(s: string, max = 48): string {
+  return s.length > max ? `${s.slice(0, max)}…` : s;
+}
 
 // ── AimPane — the aim worklist as the sole face (slack frozen) ─────────
 //
@@ -266,6 +311,102 @@ export function AimFace({ unitName }: { unitName: string | null }) {
     setModal({ mode: "edit", slug });
   }, []);
 
+  // ── drag-and-drop re-parent state (Tree mode) — see AimDnd above ──
+  const [drag, setDrag] = useState<DragState | null>(null);
+  const [dropOverKey, setDropOverKey] = useState<string | null>(null);
+  const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
+
+  const beginDrag = useCallback(
+    (slug: string) => {
+      const found = resolveSelection(slug, repos);
+      if (found === null) return;
+      const forbidden = descendantsOf(slug, found.childrenOf);
+      forbidden.add(slug);
+      setDrag({
+        slug,
+        repoRoot: found.repo.repo_root,
+        currentParent: found.node.parent,
+        forbidden,
+        aim: found.node.aim,
+        state: found.node.state,
+      });
+      setDropOverKey(null);
+    },
+    [repos],
+  );
+  const endDrag = useCallback(() => {
+    setDrag(null);
+    setDropOverKey(null);
+  }, []);
+  const canDropNode = useCallback(
+    (slug: string, repoRoot: string) =>
+      drag !== null &&
+      repoRoot === drag.repoRoot &&
+      !drag.forbidden.has(slug) &&
+      slug !== drag.currentParent,
+    [drag],
+  );
+  const canDropRoot = useCallback(
+    (repoRoot: string) =>
+      drag !== null && repoRoot === drag.repoRoot && drag.currentParent !== null,
+    [drag],
+  );
+  const dropNode = useCallback(
+    (slug: string, repoRoot: string) => {
+      if (
+        drag === null ||
+        repoRoot !== drag.repoRoot ||
+        drag.forbidden.has(slug) ||
+        slug === drag.currentParent
+      ) {
+        endDrag();
+        return;
+      }
+      const target = resolveSelection(slug, repos);
+      setPendingMove({
+        slug: drag.slug,
+        aim: drag.aim,
+        state: drag.state,
+        newParent: slug,
+        targetLabel: `「${clipAim(target?.node.aim ?? slug)}」の子`,
+      });
+      endDrag();
+    },
+    [drag, repos, endDrag],
+  );
+  const dropRoot = useCallback(
+    (repoRoot: string) => {
+      if (drag === null || repoRoot !== drag.repoRoot || drag.currentParent === null) {
+        endDrag();
+        return;
+      }
+      const repo = repos.find((r) => r.repo_root === repoRoot);
+      setPendingMove({
+        slug: drag.slug,
+        aim: drag.aim,
+        state: drag.state,
+        newParent: null,
+        targetLabel: `${repo?.repo_label ?? "?"} の root`,
+      });
+      endDrag();
+    },
+    [drag, repos, endDrag],
+  );
+  const dnd = useMemo<AimDnd>(
+    () => ({
+      dragSlug: drag?.slug ?? null,
+      overKey: dropOverKey,
+      begin: beginDrag,
+      end: endDrag,
+      canDropNode,
+      canDropRoot,
+      hover: setDropOverKey,
+      dropNode,
+      dropRoot,
+    }),
+    [drag, dropOverKey, beginDrag, endDrag, canDropNode, canDropRoot, dropNode, dropRoot],
+  );
+
   // Scroll the freshly-selected row into view (centered) — reproduces the
   // mock's reveal scroll. The slug is a validated kebab identity (`[a-z0-9-]`),
   // so it needs no attribute-selector escaping. Guarded for jsdom, where
@@ -296,6 +437,7 @@ export function AimFace({ unitName }: { unitName: string | null }) {
         onSelect={select}
         onAddChild={(repoRoot, parent) => openCreate(repoRoot, parent)}
         onAddRoot={(repoRoot) => openCreate(repoRoot, "")}
+        dnd={dnd}
       />
     );
   } else {
@@ -425,6 +567,19 @@ export function AimFace({ unitName }: { unitName: string | null }) {
             setModal(null);
             reveal(slug);
           }}
+        />
+      )}
+
+      {pendingMove !== null && unitName !== null && (
+        <ReparentConfirm
+          move={pendingMove}
+          unitName={unitName}
+          refresh={refresh}
+          onDone={(slug) => {
+            setPendingMove(null);
+            reveal(slug);
+          }}
+          onClose={() => setPendingMove(null)}
         />
       )}
     </>
@@ -603,6 +758,7 @@ function TreeNavigator({
   onSelect,
   onAddChild,
   onAddRoot,
+  dnd,
 }: {
   repos: readonly RepoAimsWire[];
   query: string;
@@ -612,6 +768,7 @@ function TreeNavigator({
   onSelect: (slug: string) => void;
   onAddChild: (repoRoot: string, parent: string) => void;
   onAddRoot: (repoRoot: string) => void;
+  dnd: AimDnd;
 }) {
   const q = query.trim().toLowerCase();
 
@@ -656,6 +813,7 @@ function TreeNavigator({
               stats={stats}
               onToggle={() => onToggleExpanded(key)}
               onAddRoot={() => onAddRoot(repo.repo_root)}
+              dnd={dnd}
             />
             {open &&
               roots.map((root) => (
@@ -670,6 +828,7 @@ function TreeNavigator({
                   onToggleExpanded={onToggleExpanded}
                   onSelect={onSelect}
                   onAddChild={onAddChild}
+                  dnd={dnd}
                 />
               ))}
           </div>
@@ -685,18 +844,36 @@ function RepoHead({
   stats,
   onToggle,
   onAddRoot,
+  dnd,
 }: {
   repo: RepoAimsWire;
   open: boolean;
   stats: RollupStats;
   onToggle: () => void;
   onAddRoot: () => void;
+  dnd: AimDnd;
 }) {
+  const rootOver = dnd.overKey === `r:${repo.repo_root}`;
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: DnD drop target for re-root; the modal parent-select is the keyboard/a11y path.
     <div
       data-testid="aim-repo-head"
       data-repo={repo.repo_label}
-      className={cn("ac-repohead", repo.primary && "pri")}
+      className={cn("ac-repohead", repo.primary && "pri", rootOver && "dnd-over")}
+      onDragOver={(e) => {
+        if (dnd.canDropRoot(repo.repo_root)) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          dnd.hover(`r:${repo.repo_root}`);
+        }
+      }}
+      onDragLeave={() => {
+        if (dnd.overKey === `r:${repo.repo_root}`) dnd.hover(null);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        dnd.dropRoot(repo.repo_root);
+      }}
     >
       <button
         type="button"
@@ -738,6 +915,7 @@ function TreeBranch({
   onToggleExpanded,
   onSelect,
   onAddChild,
+  dnd,
 }: {
   node: AimWire;
   depth: number;
@@ -748,6 +926,7 @@ function TreeBranch({
   onToggleExpanded: (key: string) => void;
   onSelect: (slug: string) => void;
   onAddChild: (repoRoot: string, parent: string) => void;
+  dnd: AimDnd;
 }) {
   const kids = childrenOf.get(node.slug) ?? [];
   const open = expanded.has(node.slug);
@@ -766,6 +945,8 @@ function TreeBranch({
         onToggle={kids.length > 0 ? () => onToggleExpanded(node.slug) : undefined}
         onSelect={() => onSelect(node.slug)}
         onAddChild={() => onAddChild(repo.repo_root, node.slug)}
+        dnd={dnd}
+        repoRoot={repo.repo_root}
       />
       {open &&
         kids.map((c) => (
@@ -780,6 +961,7 @@ function TreeBranch({
             onToggleExpanded={onToggleExpanded}
             onSelect={onSelect}
             onAddChild={onAddChild}
+            dnd={dnd}
           />
         ))}
     </>
@@ -787,6 +969,35 @@ function TreeBranch({
 }
 
 // ── the shared row ────────────────────────────────────────────────────
+
+// The DnD event handlers for a Tree-mode row, with `dnd`+`repoRoot` captured
+// non-null so the row JSX stays terse. Spread onto the row div only in Tree
+// mode; Frontier / search-hit rows get none and stay inert (non-draggable).
+function dndRowProps(dnd: AimDnd, slug: string, repoRoot: string) {
+  return {
+    draggable: true,
+    onDragStart: (e: ReactDragEvent) => {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", slug);
+      dnd.begin(slug);
+    },
+    onDragEnd: () => dnd.end(),
+    onDragOver: (e: ReactDragEvent) => {
+      if (dnd.canDropNode(slug, repoRoot)) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        dnd.hover(`n:${slug}`);
+      }
+    },
+    onDragLeave: () => {
+      if (dnd.overKey === `n:${slug}`) dnd.hover(null);
+    },
+    onDrop: (e: ReactDragEvent) => {
+      e.preventDefault();
+      dnd.dropNode(slug, repoRoot);
+    },
+  };
+}
 
 function AimRow({
   node,
@@ -802,6 +1013,8 @@ function AimRow({
   onToggle,
   onSelect,
   onAddChild,
+  dnd,
+  repoRoot,
 }: {
   node: AimWire;
   depth?: number;
@@ -816,16 +1029,31 @@ function AimRow({
   onToggle?: () => void;
   onSelect: () => void;
   onAddChild?: () => void;
+  dnd?: AimDnd;
+  repoRoot?: string;
 }) {
   const tone = aimTone(node);
   const wd = workingDeltaKind(node);
+  // DnD is Tree-mode only: enabled when TreeBranch supplies both the context and
+  // the row's repo. Frontier / search-hit rows pass neither, so they stay inert.
+  const dndProps =
+    dnd != null && repoRoot != null && treeRow ? dndRowProps(dnd, node.slug, repoRoot) : null;
+  const isDragSrc = dndProps !== null && dnd?.dragSlug === node.slug;
+  const isDropOver = dndProps !== null && dnd?.overKey === `n:${node.slug}`;
   return (
     <div
       data-testid="aim-row"
       data-slug={node.slug}
       data-tone={tone}
-      className={cn("ac-r", TONE_ROW_CLASS[tone], selected && "sel")}
+      className={cn(
+        "ac-r",
+        TONE_ROW_CLASS[tone],
+        selected && "sel",
+        isDragSrc && "dnd-src",
+        isDropOver && "dnd-over",
+      )}
       style={depth > 0 ? { paddingLeft: 12 + depth * 15 } : undefined}
+      {...dndProps}
     >
       <span className="ac-gut" aria-hidden="true" />
       {/* Tree toggle (children) / spacer (leaf), OUTSIDE the select button so
@@ -1335,6 +1563,105 @@ function CrossEdgeRow({
 // What the modal is doing: a CREATE (root in `repoRoot`, optionally under
 // `parent`) or an EDIT of an existing node by `slug`. The mock's single modal
 // doubles for both (edit shows the `state` select, freezes repo + slug).
+// The re-parent confirm gate (DnD drop). A drop stages a `PendingMove`; this
+// dialog states the move and commits it through the same `editAim` write the
+// modal uses — resending the dragged node's current `aim`+`state` so only
+// `parent` changes. Kept deliberate because `parent` is a human-owned
+// frontmatter field; Esc / backdrop / 取消 abort with no write.
+function ReparentConfirm({
+  move,
+  unitName,
+  refresh,
+  onClose,
+  onDone,
+}: {
+  move: PendingMove;
+  unitName: string;
+  refresh: () => void;
+  onClose: () => void;
+  onDone: (slug: string) => void;
+}) {
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Once the write is in flight the parent change is already committed
+  // server-side, so a "cancel" would be a lie — the move can't be undone by
+  // closing the dialog (`onConfirm`'s promise still resolves into onDone). Both
+  // dismissal paths (Esc / backdrop) therefore go inert while submitting, to
+  // match the disabled 取消 button.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && !submitting) onClose();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose, submitting]);
+
+  async function onConfirm() {
+    setSubmitting(true);
+    setError(null);
+    try {
+      await api.editAim(unitName, move.slug, {
+        aim: move.aim,
+        parent: move.newParent,
+        state: move.state,
+      });
+      refresh();
+      onDone(move.slug);
+    } catch (err) {
+      setError(writeErrorMessage(err));
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: backdrop tap-to-close; Esc handles the keyboard path.
+    // biome-ignore lint/a11y/noStaticElementInteractions: the backdrop is a dismiss target, not a control.
+    <div
+      className="ac-modal-bg"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !submitting) onClose();
+      }}
+    >
+      <div
+        className="ac-modal ac-confirm"
+        role="dialog"
+        aria-modal="true"
+        aria-label="aim を移動"
+        data-testid="aim-reparent-confirm"
+      >
+        <h3>aim を移動</h3>
+        <div className="ac-modal-body">
+          <p className="ac-confirm-msg">
+            「{clipAim(move.aim)}」を <b>{move.targetLabel}</b> へ移動します。
+          </p>
+          <div className="ac-hint2">
+            親は人間所有の frontmatter — この移動だけが parent を書き換えます。
+          </div>
+          {error !== null && (
+            <p role="alert" className="ac-hint2 err">
+              {error}
+            </p>
+          )}
+        </div>
+        <div className="ac-modal-foot">
+          <button type="button" className="ac-btn" onClick={onClose} disabled={submitting}>
+            取消
+          </button>
+          <button
+            type="button"
+            className="ac-btn primary"
+            onClick={onConfirm}
+            disabled={submitting}
+          >
+            {submitting ? "移動中…" : "移動"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type ModalDescriptor =
   | { mode: "create"; repoRoot: string; parent: string }
   | { mode: "edit"; slug: string };
