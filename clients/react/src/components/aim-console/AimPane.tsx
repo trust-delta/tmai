@@ -1584,13 +1584,18 @@ function ReparentConfirm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Once the write is in flight the parent change is already committed
+  // server-side, so a "cancel" would be a lie — the move can't be undone by
+  // closing the dialog (`onConfirm`'s promise still resolves into onDone). Both
+  // dismissal paths (Esc / backdrop) therefore go inert while submitting, to
+  // match the disabled 取消 button.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && !submitting) onClose();
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [onClose, submitting]);
 
   async function onConfirm() {
     setSubmitting(true);
@@ -1615,7 +1620,7 @@ function ReparentConfirm({
     <div
       className="ac-modal-bg"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget && !submitting) onClose();
       }}
     >
       <div

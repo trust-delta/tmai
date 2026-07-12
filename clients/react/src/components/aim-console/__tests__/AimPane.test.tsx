@@ -696,6 +696,29 @@ describe("AimPane — drag-and-drop re-parent (Tree mode)", () => {
     expect(screen.queryByTestId("aim-reparent-confirm")).toBeNull();
     expect(editAimMock).not.toHaveBeenCalled();
   });
+
+  it("ignores Escape while the move is in flight (the write is already committed)", async () => {
+    let resolveEdit: (v: AimWire) => void = () => {};
+    editAimMock.mockReturnValue(
+      new Promise<AimWire>((r) => {
+        resolveEdit = r;
+      }),
+    );
+    await enterTree();
+    fireEvent.dragStart(rowEl("attention-per-artifact"), { dataTransfer: dt() });
+    fireEvent.drop(rowEl("aim-system"), { dataTransfer: dt() });
+    const confirm = await screen.findByTestId("aim-reparent-confirm");
+    // Commit — now submitting, the write promise is still pending.
+    fireEvent.click(within(confirm).getByRole("button", { name: "移動" }));
+    // Escape during submit must NOT dismiss (a "cancel" here would be a lie —
+    // the parent write is already in flight and can't be undone by closing).
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByTestId("aim-reparent-confirm")).not.toBeNull();
+    // Resolve → the move completes normally and the dialog closes.
+    resolveEdit(aimStub({ slug: "attention-per-artifact" }));
+    await waitFor(() => expect(screen.queryByTestId("aim-reparent-confirm")).toBeNull());
+    expect(editAimMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("AimPane — mode persistence", () => {
