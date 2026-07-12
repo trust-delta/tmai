@@ -605,6 +605,99 @@ describe("AimPane — edit modal (pin #3: drift mirrors the engine on refetch)",
   });
 });
 
+describe("AimPane — drag-and-drop re-parent (Tree mode)", () => {
+  // Minimal DataTransfer stand-in (jsdom has none); the handlers only touch
+  // effectAllowed / dropEffect / setData, so a plain object suffices.
+  function dt(): DataTransfer {
+    const store: Record<string, string> = {};
+    return {
+      effectAllowed: "",
+      dropEffect: "",
+      setData: (k: string, v: string) => {
+        store[k] = v;
+      },
+      getData: (k: string) => store[k] ?? "",
+    } as unknown as DataTransfer;
+  }
+  function repoHeadEl(label: string): HTMLElement {
+    const el = document.querySelector(`[data-testid="aim-repo-head"][data-repo="${label}"]`);
+    if (!el) throw new Error(`no repo head for ${label}`);
+    return el as HTMLElement;
+  }
+  async function enterTree() {
+    aimsMock.mockResolvedValue(responseStub());
+    renderPane();
+    await awaitLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Tree" }));
+  }
+
+  it("drops a node onto another (same repo, non-descendant) → confirm → editAim keeps aim+state, changes parent", async () => {
+    editAimMock.mockResolvedValue(aimStub({ slug: "attention-per-artifact" }));
+    await enterTree();
+    // attention-per-artifact (child of amplify) → onto aim-system (the other root).
+    fireEvent.dragStart(rowEl("attention-per-artifact"), { dataTransfer: dt() });
+    fireEvent.dragOver(rowEl("aim-system"), { dataTransfer: dt() });
+    fireEvent.drop(rowEl("aim-system"), { dataTransfer: dt() });
+
+    const confirm = await screen.findByTestId("aim-reparent-confirm");
+    fireEvent.click(within(confirm).getByRole("button", { name: "移動" }));
+
+    await waitFor(() =>
+      expect(editAimMock).toHaveBeenCalledWith("u", "attention-per-artifact", {
+        aim: "per-artifact attention",
+        parent: "aim-system",
+        state: "open",
+      }),
+    );
+    // Pin #3: re-parent refetches (no client-side cascade).
+    await waitFor(() => expect(aimsMock.mock.calls.length).toBeGreaterThan(1));
+  });
+
+  it("rejects a drop onto a descendant — no confirm, no write (cycle guard)", async () => {
+    await enterTree();
+    // amplify-human-judgment (root) → onto its own deep descendant attention-backend.
+    fireEvent.dragStart(rowEl("amplify-human-judgment"), { dataTransfer: dt() });
+    fireEvent.drop(rowEl("attention-backend"), { dataTransfer: dt() });
+    expect(screen.queryByTestId("aim-reparent-confirm")).toBeNull();
+    expect(editAimMock).not.toHaveBeenCalled();
+  });
+
+  it("drops onto the repo head → re-roots (parent: null)", async () => {
+    editAimMock.mockResolvedValue(aimStub({ slug: "attention-per-artifact" }));
+    await enterTree();
+    fireEvent.dragStart(rowEl("attention-per-artifact"), { dataTransfer: dt() });
+    fireEvent.drop(repoHeadEl("tmai-core"), { dataTransfer: dt() });
+    const confirm = await screen.findByTestId("aim-reparent-confirm");
+    fireEvent.click(within(confirm).getByRole("button", { name: "移動" }));
+    await waitFor(() =>
+      expect(editAimMock).toHaveBeenCalledWith("u", "attention-per-artifact", {
+        aim: "per-artifact attention",
+        parent: null,
+        state: "open",
+      }),
+    );
+  });
+
+  it("cancel in the confirm aborts with no write", async () => {
+    await enterTree();
+    fireEvent.dragStart(rowEl("attention-per-artifact"), { dataTransfer: dt() });
+    fireEvent.drop(rowEl("aim-system"), { dataTransfer: dt() });
+    const confirm = await screen.findByTestId("aim-reparent-confirm");
+    fireEvent.click(within(confirm).getByRole("button", { name: "取消" }));
+    expect(screen.queryByTestId("aim-reparent-confirm")).toBeNull();
+    expect(editAimMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a cross-repo drop (single-repo scope — RFC #608)", async () => {
+    await enterTree();
+    // inverted-ui lives in tmai; aim-system in tmai-core → different repo.
+    fireEvent.dragStart(rowEl("inverted-ui"), { dataTransfer: dt() });
+    fireEvent.drop(rowEl("aim-system"), { dataTransfer: dt() });
+    expect(screen.queryByTestId("aim-reparent-confirm")).toBeNull();
+    expect(editAimMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("AimPane — mode persistence", () => {
   it("persists the Frontier/Tree mode across remounts (ui-prefs)", async () => {
     aimsMock.mockResolvedValue(responseStub());
