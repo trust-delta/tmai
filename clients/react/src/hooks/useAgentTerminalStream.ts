@@ -43,7 +43,7 @@ interface UseAgentTerminalStreamOptions {
 
 interface UseAgentTerminalStreamResult {
   /** Send key bytes to the agent's stdin. No-op while not `open`. */
-  sendKeys: (data: Uint8Array | string | ArrayBuffer) => void;
+  sendKeys: (data: Uint8Array<ArrayBuffer> | string | ArrayBuffer) => void;
   /** Latest connection status — also delivered through `onStatus`. */
   status: TerminalStreamStatus;
 }
@@ -182,7 +182,7 @@ export function useAgentTerminalStream({
     };
   }, [agentId, setStatusBoth]);
 
-  const sendKeys = useCallback((data: Uint8Array | string | ArrayBuffer): void => {
+  const sendKeys = useCallback((data: Uint8Array<ArrayBuffer> | string | ArrayBuffer): void => {
     const ws = keysWsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     if (typeof data === "string") {
