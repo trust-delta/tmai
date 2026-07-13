@@ -14,7 +14,7 @@
 const ENC = new TextEncoder();
 
 // Special-key sequences that match `tmux_key_to_bytes` exactly.
-const SPECIAL_KEY_BYTES: Record<string, Uint8Array> = {
+const SPECIAL_KEY_BYTES: Record<string, Uint8Array<ArrayBuffer>> = {
   Enter: new Uint8Array([0x0d]), // \r
   Escape: new Uint8Array([0x1b]),
   Backspace: new Uint8Array([0x7f]),
@@ -56,7 +56,7 @@ const SHIFT_TAB = new Uint8Array([0x1b, 0x5b, 0x5a]); // CSI Z
  * | "@" + ctrl (US layout) | "C-@"            | 0x00              | 0x00     |
  * | "y" (no modifier)      | (chars: "y")     | (chars path)      | 0x79     |
  */
-export function keyEventToBytes(e: KeyboardEvent): Uint8Array | null {
+export function keyEventToBytes(e: KeyboardEvent): Uint8Array<ArrayBuffer> | null {
   // Ctrl+single-char → bitmask to control codes (matches the Rust
   // `s.as_bytes()[2] & 0x1f` branch, but with browser-side normalization
   // to lowercase — the Rust impl accepts both cases identically because
@@ -89,6 +89,6 @@ export function keyEventToBytes(e: KeyboardEvent): Uint8Array | null {
  * as UTF-8 bytes for direct send through the keys WebSocket. Equivalent
  * to the legacy `passthrough({ chars })` path.
  */
-export function textToBytes(text: string): Uint8Array {
+export function textToBytes(text: string): Uint8Array<ArrayBuffer> {
   return ENC.encode(text);
 }

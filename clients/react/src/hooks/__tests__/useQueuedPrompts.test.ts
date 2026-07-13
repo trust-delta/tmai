@@ -103,7 +103,7 @@ describe("useQueuedPrompts", () => {
 
   // Phase 2: polling replaced by SSE subscription
   it("does NOT start a polling interval on mount (SSE-driven)", () => {
-    const spy = vi.spyOn(global, "setInterval");
+    const spy = vi.spyOn(globalThis, "setInterval");
     const { unmount } = renderHook(() => useQueuedPrompts("agent-1"));
     const pollingIntervals = spy.mock.calls.filter(([, ms]) => ms === 3000);
     expect(pollingIntervals).toHaveLength(0);

@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // Repo-wide regression lock for the WebUI semantic-token migration.
 //
 // The migration (PRs A–H) moved the entire component tree off the

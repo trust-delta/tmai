@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { QueuedPrompt } from "@/lib/api";
 
 // ── jsdom stubs for DOM APIs not implemented in jsdom ──
-global.ResizeObserver = class ResizeObserver {
+globalThis.ResizeObserver = class ResizeObserver {
   observe() {}
   unobserve() {}
   disconnect() {}
