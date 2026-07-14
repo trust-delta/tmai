@@ -11,10 +11,10 @@
 // `handoffOverlay` prop, and the overlay itself is the REAL component so we
 // assert on its phase rows.
 
-import { screen } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentSnapshot } from "@/lib/api";
+import { type AgentSnapshot, api } from "@/lib/api";
 import { renderWithProviders } from "@/test/render";
 import type { SlotResponse } from "@/types/generated/SlotResponse";
 
@@ -195,5 +195,98 @@ describe("App — handoff ritual wiring", () => {
     // `resolveUnitName("…/tmai-core", [TMAI_UNIT])` === "tmai" === ritual unit →
     // gate holds → overlay shows. A basename fallback ("tmai-core") would hide it.
     expect(screen.getByTestId("phase-row-prompted")).toBeTruthy();
+  });
+
+  // Cross-unit mis-kill guard (operator-reported 2026-07-15). A handoff
+  // escalated for one unit; the failure dialog's Force-kill / Retry / Resume
+  // must target the RITUAL unit, never the FOCUSED unit. The reported harm: a
+  // failed handoff dropped its Producer from the live set, focus auto-bounced
+  // to another unit, and Force-kill killed THAT (unopened) unit's Producer.
+  it("disables Force-kill when the failed ritual's unit has no live Producer — never falls back to the focused unit (mis-kill guard)", () => {
+    // `tmai` is the only live unit (so it is focused); the ritual escalated for
+    // a DIFFERENT unit "gamma" whose Producer already left the live set.
+    useSlotsMock.mockReturnValue({ data: { slots: [TMAI_UNIT] }, loading: false, error: null });
+    useAgentsMock.mockReturnValue({
+      agents: [
+        {
+          ...agent({ id: "claude:tmai-prod", cwd: "/home/u/works/tmai/tmai" }),
+          is_producer: true,
+          unit: "tmai",
+        },
+      ],
+      attentionCount: 0,
+      loading: false,
+      refresh: vi.fn(),
+    });
+    useHandoffRitualMock.mockReturnValue({
+      ...idleRitual(),
+      state: {
+        kind: "escalated",
+        ritualId: "r-1",
+        unit: "gamma",
+        reason: "handoff_timeout",
+        message: null,
+      },
+    });
+
+    renderWithProviders(<App />);
+
+    // The dialog is for unit "gamma" (gone) — Force-kill must be DISABLED, not
+    // wired to tmai's Producer. (The buggy code enabled it, killing tmai.)
+    const forceKill = screen.getByRole("button", { name: "Force kill" }) as HTMLButtonElement;
+    expect(forceKill.disabled).toBe(true);
+  });
+
+  it("Force-kill targets the RITUAL unit's Producer, not the focused unit's", async () => {
+    // Two live units. `groupByProject` orders by first-seen agent, so the
+    // FOCUSED unit is whichever Producer is first — put "focused" first, then
+    // escalate the ritual for the OTHER unit "gamma".
+    const focusedProd = {
+      ...agent({ id: "claude:focused-prod", cwd: "/p/focused" }),
+      is_producer: true,
+      unit: "focused",
+    };
+    const gammaProd = {
+      ...agent({ id: "claude:gamma-prod", cwd: "/p/gamma" }),
+      is_producer: true,
+      unit: "gamma",
+    };
+    useSlotsMock.mockReturnValue({
+      data: {
+        slots: [
+          { name: "focused", repos: [{ path: "/p/focused", primary: true }] },
+          { name: "gamma", repos: [{ path: "/p/gamma", primary: true }] },
+        ],
+      },
+      loading: false,
+      error: null,
+    });
+    useAgentsMock.mockReturnValue({
+      agents: [focusedProd, gammaProd], // focused first → it is the focused unit
+      attentionCount: 0,
+      loading: false,
+      refresh: vi.fn(),
+    });
+    useHandoffRitualMock.mockReturnValue({
+      ...idleRitual(),
+      state: {
+        kind: "escalated",
+        ritualId: "r-1",
+        unit: "gamma",
+        reason: "rejected",
+        message: null,
+      },
+    });
+    const killSpy = vi.spyOn(api, "killAgent").mockResolvedValue(undefined);
+
+    renderWithProviders(<App />);
+
+    const forceKill = screen.getByRole("button", { name: "Force kill" }) as HTMLButtonElement;
+    expect(forceKill.disabled).toBe(false);
+    fireEvent.click(forceKill);
+
+    await waitFor(() => expect(killSpy).toHaveBeenCalledWith("claude:gamma-prod"));
+    expect(killSpy).not.toHaveBeenCalledWith("claude:focused-prod");
+    killSpy.mockRestore();
   });
 });
