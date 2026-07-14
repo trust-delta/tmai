@@ -114,6 +114,26 @@ describe("AimConsole — S1 shell", () => {
     expect(pills[1].getAttribute("data-primary")).toBe("false");
   });
 
+  it("renders an owed signal dot + hover reason on a unit that owes a handoff review", () => {
+    renderConsole({ unitSignals: { tmai: "owed" } });
+    // The tab's accessible name carries the reason so the operator learns WHAT
+    // the non-focused unit owes without switching to it.
+    const tab = screen.getByRole("button", {
+      name: "unit: tmai, operator action owed — handoff awaiting review",
+    });
+    const dot = tab.querySelector(".ac-d");
+    expect(dot?.className).toContain("sig-owed");
+    expect(dot?.getAttribute("data-signal")).toBe("owed");
+  });
+
+  it("leaves the dot quiet (no signal class, plain name) for a unit with no signal", () => {
+    renderConsole(); // default unitSignals = {}
+    const tab = screen.getByRole("button", { name: "unit: tmai" });
+    const dot = tab.querySelector(".ac-d");
+    expect(dot?.className ?? "").not.toContain("sig-");
+    expect(dot?.getAttribute("data-signal")).toBeNull();
+  });
+
   it("opens the Remote as an OVERLAY by default; ⊟ docks it; ✕ collapses + resets to overlay", () => {
     renderConsole();
     const root = screen.getByTestId("aim-console");

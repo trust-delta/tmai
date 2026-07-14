@@ -55,6 +55,7 @@ import { AimRemoteGutter, ConvAimGutter, OverlayEdgeGutter } from "./Gutters";
 import { PrRail } from "./PrRail";
 import { advanceCursor, effectiveCursor } from "./remote-delta";
 import { SessionPane } from "./SessionPane";
+import type { UnitSignal } from "./unit-signal";
 // Bundled dev-tool typography (offline-robust @fontsource, NOT a Google Fonts
 // <link>) — loads the exact families `aim-console.css` references via --sans /
 // --mono so the dev-tool look matches the mock instead of falling back to
@@ -105,6 +106,12 @@ interface AimConsoleProps {
    *  slot carries `name + repos` (same membership the tabs + per-repo footer
    *  use) plus a lifecycle `state` (occupied / vacant / halted). */
   units: SlotResponse[];
+  /** Per-unit cross-unit tab signal, keyed by unit name (App resolves it from
+   *  the sibling sources, precedence-collapsed in `unit-signal.ts`). A unit's
+   *  dot renders its signal; absent / `null` = quiet. Only the `owed` source
+   *  (handoff `awaiting_review`) is populated today. Optional so tests and any
+   *  pre-signal caller render a quiet strip. */
+  unitSignals?: Record<string, UnitSignal | null>;
   /** Name of the currently focused unit, so the matching tab highlights. */
   activeUnitName: string | null;
   /** Re-scope the focused unit to the clicked tab. */
@@ -141,6 +148,7 @@ interface AimConsoleProps {
 
 export function AimConsole({
   units,
+  unitSignals = {},
   activeUnitName,
   onSelectUnit,
   onAddUnit,
@@ -306,6 +314,7 @@ export function AimConsole({
             key={unit.name}
             unit={unit}
             active={unit.name === activeUnitName}
+            signal={unitSignals[unit.name] ?? null}
             onSelect={() => onSelectUnit(unit)}
             onClose={() => onCloseUnit(unit)}
           />
@@ -408,19 +417,33 @@ export function AimConsole({
   );
 }
 
+// Human-readable reason per signal, surfaced on the tab's hover/aria so the
+// operator learns WHAT a non-focused unit owes without switching to it (aim
+// `cross-unit-operator-owed`: "provenance と理由は hover / on-switch の string
+// で示す"). Only `owed` has a live source today (handoff review gate); the
+// others are named ahead of their sources landing.
+const SIGNAL_REASON: Record<UnitSignal, string> = {
+  owed: "operator action owed — handoff awaiting review",
+  fresh: "new remote activity",
+  idle: "idle — no motion",
+};
+
 // Top-bar unit tab — repo pills (primary highlighted), styled with the
 // aim-console tokens.
 function AimUnitTab({
   unit,
   active,
+  signal,
   onSelect,
   onClose,
 }: {
   unit: SlotResponse;
   active: boolean;
+  signal: UnitSignal | null;
   onSelect: () => void;
   onClose: () => void;
 }) {
+  const signalReason = signal ? SIGNAL_REASON[signal] : null;
   // Always-on confirm gate (mirrors the legacy UnitTabs, same copy): close =
   // kill (Producer + workers + footer bash), so it is never silent. Nesting a
   // <button> inside the tab <button> is invalid, so the close × is a sibling
@@ -446,10 +469,14 @@ function AimUnitTab({
         className={cn("ac-utab", active && "on")}
         onClick={onSelect}
         aria-current={active ? "true" : undefined}
-        aria-label={`unit: ${unit.name}`}
-        title={`unit: ${unit.name}`}
+        aria-label={signalReason ? `unit: ${unit.name}, ${signalReason}` : `unit: ${unit.name}`}
+        title={signalReason ? `unit: ${unit.name} — ${signalReason}` : `unit: ${unit.name}`}
       >
-        <span className="ac-d" />
+        <span
+          className={cn("ac-d", signal && `sig-${signal}`)}
+          data-signal={signal ?? undefined}
+          aria-hidden="true"
+        />
         {unit.repos.map((repo) => (
           <span
             key={repo.path}
