@@ -3,10 +3,10 @@
 //
 // Pinned exclusions (operator-ratified): the cursor is CLIENT STATE ONLY —
 // it is never sent to any endpoint and the Producer never reads it; there
-// is no per-row read-marking and no mute affordance; the cross-unit tab
-// accent is deferred until a second unit exists. `advanceCursor` is the
-// single mutation door and only the two close acts (panel collapse /
-// section collapse) call it.
+// is no per-row read-marking and no mute affordance. `advanceCursor` is the
+// single mutation door and only the "stopped looking" close acts call it
+// (panel collapse / section collapse / cross-unit tab-leave — the third act
+// added when `cross-unit-remote-delta` lifted the accent to the tab).
 
 import { describe, expect, it } from "vitest";
 import type { IssueSummaryWire, PrSummaryWire, RepoIssuesWire, RepoPrsWire } from "@/lib/api";
@@ -16,6 +16,7 @@ import {
   issueVocabTimestamp,
   isUnobserved,
   prVocabTimestamp,
+  unitHasUnobserved,
   unobservedIssueCount,
   unobservedPrCount,
 } from "../remote-delta";
@@ -213,5 +214,61 @@ describe("unobserved counts (within-unit only)", () => {
     expect(unobservedIssueCount(repos, cursor)).toBe(1);
     expect(unobservedIssueCount(repos, null)).toBe(2);
     expect(unobservedIssueCount(null, cursor)).toBe(0);
+  });
+});
+
+describe("unitHasUnobserved — cross-unit freshness presence bit", () => {
+  const reposWithPr = (created: string): RepoPrsWire[] => [
+    { repo_path: "/p/a", repo_label: "a", primary: true, prs: [pr({ created_at: created })] },
+  ];
+  const reposWithIssue = (created: string): RepoIssuesWire[] => [
+    {
+      repo_path: "/p/a",
+      repo_label: "a",
+      primary: true,
+      issues: [issue({ created_at: created })],
+    },
+  ];
+
+  it("undefined delta (not yet fanned out) is not fresh", () => {
+    expect(unitHasUnobserved(undefined, {}, "u")).toBe(false);
+  });
+
+  it("null cursor (never looked at this tab) + any row → fresh", () => {
+    const delta = { prs: reposWithPr("2026-06-13T00:00:00Z"), issues: null };
+    expect(unitHasUnobserved(delta, {}, "u")).toBe(true);
+  });
+
+  it("a PR newer than the unit's cursor → fresh", () => {
+    const delta = { prs: reposWithPr("2026-06-13T12:00:00Z"), issues: null };
+    const cursors = { u: { panel: "2026-06-13T10:00:00Z" } };
+    expect(unitHasUnobserved(delta, cursors, "u")).toBe(true);
+  });
+
+  it("only rows at/before the cursor → not fresh", () => {
+    const delta = { prs: reposWithPr("2026-06-13T08:00:00Z"), issues: null };
+    const cursors = { u: { panel: "2026-06-13T10:00:00Z" } };
+    expect(unitHasUnobserved(delta, cursors, "u")).toBe(false);
+  });
+
+  it("an unobserved ISSUE alone lights the bit", () => {
+    const delta = { prs: null, issues: reposWithIssue("2026-06-13T12:00:00Z") };
+    const cursors = { u: { panel: "2026-06-13T10:00:00Z" } };
+    expect(unitHasUnobserved(delta, cursors, "u")).toBe(true);
+  });
+
+  it("empty repos (genuinely none) → not fresh even with no cursor", () => {
+    expect(unitHasUnobserved({ prs: [], issues: [] }, {}, "u")).toBe(false);
+  });
+
+  it("both sections null (fetch failed, no prior) → not fresh", () => {
+    expect(unitHasUnobserved({ prs: null, issues: null }, {}, "u")).toBe(false);
+  });
+
+  it("uses THIS unit's cursor — another unit's cursor never applies", () => {
+    const delta = { prs: reposWithPr("2026-06-13T09:00:00Z"), issues: null };
+    // Only `other` has a (newer) cursor; unit `u` has none → still fresh.
+    const cursors = { other: { panel: "2026-06-13T23:00:00Z" } };
+    expect(unitHasUnobserved(delta, cursors, "u")).toBe(true);
   });
 });

@@ -50,9 +50,10 @@ export interface AimConsoleLayout {
 //   - a freshness instrument, NOT a confirmation ledger — the cursor records
 //     "when the operator last stopped looking" (見ていた), it never claims
 //     anything was 確認済み;
-//   - exactly two advance acts (panel collapse / section collapse) — no
-//     visibilitychange, no scroll, no per-row read-marking, no timers, no
-//     mute affordance.
+//   - three advance acts, all "stopped looking" stamps (panel collapse /
+//     section collapse / switching focus away from a unit's tab — the
+//     cross-unit `cross-unit-remote-delta` dot) — no visibilitychange, no
+//     scroll, no per-row read-marking, no timers, no mute affordance.
 // Multi-client divergence is semantically correct: each screen's cursor
 // means "what THIS screen last saw".
 export interface RemoteDeltaCursor {

@@ -69,10 +69,13 @@ export function isUnobserved(vocabTs: string | null, cursor: string | null): boo
   return Date.parse(vocabTs) > Date.parse(cursor);
 }
 
-// Immutable cursor advance for one of the EXACTLY TWO act kinds: the R
-// panel collapse (`panel`) and a section collapse (`prs` / `issues`).
-// Nothing else may call this — no visibilitychange, no scroll, no per-row
-// marking, no timers (operator-ratified exclusion list).
+// Immutable cursor advance for one of the act kinds that all reduce to the
+// same "operator stopped looking" stamp: the R panel collapse (`panel`), a
+// section collapse (`prs` / `issues`), and — for the cross-unit tab dot
+// (`cross-unit-remote-delta`) — switching focus AWAY from a unit's tab, which
+// stamps that unit's `panel` cursor (App's tab-leave effect). All three are
+// EXPLICIT operator acts; nothing implicit may call this — no visibilitychange,
+// no scroll, no per-row marking, no timers (operator-ratified exclusion list).
 export function advanceCursor(
   cursors: Record<string, RemoteDeltaCursor>,
   unit: string,
@@ -101,5 +104,35 @@ export function unobservedIssueCount(
   return repos.reduce(
     (n, r) => n + r.issues.filter((i) => isUnobserved(issueVocabTimestamp(i), cursor)).length,
     0,
+  );
+}
+
+// One unit's raw remote-Δ slices as fanned out by `useCrossUnitRemoteDelta`
+// (aim `cross-unit-remote-delta`). `null` = that section's fetch failed this
+// cycle (the hook keeps the prior dot); an empty `repos[]` = the unit genuinely
+// has none.
+export interface UnitRemoteDelta {
+  prs: RepoPrsWire[] | null;
+  issues: RepoIssuesWire[] | null;
+}
+
+// Every live unit's slices, keyed by unit name.
+export type CrossUnitRemoteDelta = Record<string, UnitRemoteDelta>;
+
+// Does this unit have ANY unobserved PR or issue? The cross-unit tab signal
+// collapses the within-unit counts to a single presence BIT — the tab accent
+// carries freshness presence, never a count (the header note's cross-unit
+// rule). `undefined` delta (not yet fanned out) is not-fresh; a `null` cursor
+// (never looked at this tab) makes every row unobserved — the honest
+// 「一度も見ていない」, which self-clears on the first tab-leave / panel close.
+export function unitHasUnobserved(
+  delta: UnitRemoteDelta | undefined,
+  cursors: Record<string, RemoteDeltaCursor>,
+  unit: string,
+): boolean {
+  if (delta === undefined) return false;
+  return (
+    unobservedPrCount(delta.prs, effectiveCursor(cursors, unit, "prs")) > 0 ||
+    unobservedIssueCount(delta.issues, effectiveCursor(cursors, unit, "issues")) > 0
   );
 }
