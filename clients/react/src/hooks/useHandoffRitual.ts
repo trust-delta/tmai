@@ -58,6 +58,14 @@ export type RitualUiState =
 
 export interface UseHandoffRitualResult {
   state: RitualUiState;
+  /** Latest handoff-ritual phase observed per unit, across ALL units on the
+   *  global `handoff_ritual` SSE stream — not just the single adopted
+   *  `state`. Lets a non-focused unit's `awaiting_review` surface as a
+   *  cross-unit tab signal (aim `cross-unit-operator-owed`): the operator,
+   *  working in unit X, learns unit Y owes a handoff review. Retains only the
+   *  LATEST phase per unit, so a forward phase (killed/…/ready) or `escalate`
+   *  supersedes `awaiting_review` and the owe clears mechanically. */
+  unitPhases: Record<string, HandoffRitualEvent["phase"]>;
   /** Number of retries already attempted in this session. Used by the
    *  dialog to disable the Retry button after the 2nd rejection. */
   retryCount: number;
@@ -85,6 +93,11 @@ export function useHandoffRitual(): UseHandoffRitualResult {
   const [state, setState] = useState<RitualUiState>({ kind: "idle" });
   const [retryCount, setRetryCount] = useState(0);
   const [retryRefused, setRetryRefused] = useState(false);
+  // Latest phase per unit, fed by EVERY handoff_ritual event (not gated by the
+  // adopted `state`'s ritual_id). This is the cross-unit owed-signal source:
+  // the single `state` above is scoped to one adopted ritual for the overlay,
+  // but the tab dots need every unit's current phase.
+  const [unitPhases, setUnitPhases] = useState<Record<string, HandoffRitualEvent["phase"]>>({});
 
   // Single state-driven event router (no ref mirror — matching reads `prev`
   // inside the updater, so the SSE handler can register once and never go
@@ -172,6 +185,11 @@ export function useHandoffRitual(): UseHandoffRitualResult {
     onEvent: (eventName, data) => {
       if (eventName !== "handoff_ritual") return;
       if (!looksLikeHandoffRitualEvent(data)) return;
+      // Track the latest phase for EVERY unit (cross-unit owed signal),
+      // independent of which single ritual `applyEvent` adopts for the overlay.
+      setUnitPhases((prev) =>
+        prev[data.unit] === data.phase ? prev : { ...prev, [data.unit]: data.phase },
+      );
       applyEvent(data);
     },
   });
@@ -228,5 +246,5 @@ export function useHandoffRitual(): UseHandoffRitualResult {
     setRetryRefused(false);
   }, []);
 
-  return { state, retryCount, retryRefused, trigger, retry, dismiss };
+  return { state, unitPhases, retryCount, retryRefused, trigger, retry, dismiss };
 }

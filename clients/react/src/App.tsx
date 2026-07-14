@@ -2,6 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AimConsole } from "@/components/aim-console/AimConsole";
 import { HandoffRitualFailureDialog } from "@/components/aim-console/HandoffRitualFailureDialog";
 import { HandoffRitualOverlay } from "@/components/aim-console/HandoffRitualOverlay";
+import {
+  handoffOwesReview,
+  resolveUnitSignal,
+  type UnitSignal,
+} from "@/components/aim-console/unit-signal";
 import { HelpOverlay } from "@/components/layout/HelpOverlay";
 import { ToastContainer, useToast } from "@/components/layout/ToastContainer";
 import { ProducerLaunchPicker } from "@/components/project/ProducerLaunchPicker";
@@ -152,12 +157,30 @@ export function App() {
   // MUST remain the only one.
   const {
     state: ritualState,
+    unitPhases: handoffUnitPhases,
     trigger: triggerHandoff,
     retry: retryHandoff,
     dismiss: dismissHandoff,
     retryCount: handoffRetryCount,
     retryRefused: handoffRetryRefused,
   } = useHandoffRitual();
+
+  // Per-unit cross-unit tab signal (aim `1-worktree-merge`'s cross-unit
+  // family). One dot per unit tab, precedence-collapsed (owed > fresh > idle).
+  // Only the `owed` source is wired today — a unit whose latest handoff phase
+  // is `awaiting_review` owes the operator a review act (aim
+  // `cross-unit-operator-owed`), surfaced even when that unit is NOT focused.
+  // `fresh` (`cross-unit-remote-delta`) / `idle` (`cross-unit-idle-passive`)
+  // sources drop in here later without re-architecting the tab.
+  const unitSignals = useMemo(() => {
+    const out: Record<string, UnitSignal | null> = {};
+    for (const slot of slotsData?.slots ?? []) {
+      out[slot.name] = resolveUnitSignal({
+        owed: handoffOwesReview(handoffUnitPhases[slot.name]),
+      });
+    }
+    return out;
+  }, [slotsData, handoffUnitPhases]);
 
   // The single live Producer for the focused unit. Drives the
   // conversation-header gate (only show it when the selected agent IS
@@ -507,6 +530,7 @@ export function App() {
     <>
       <AimConsole
         units={slotsData?.slots ?? []}
+        unitSignals={unitSignals}
         activeUnitName={unitName}
         onSelectUnit={handleSelectUnit}
         onAddUnit={openLaunchPicker}

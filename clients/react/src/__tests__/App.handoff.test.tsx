@@ -101,6 +101,9 @@ function agent(overrides: { id: string; cwd?: string }): AgentSnapshot {
 function idleRitual() {
   return {
     state: { kind: "idle" as const },
+    // Per-unit latest handoff phase (cross-unit owed tab signal). Empty here —
+    // this file exercises the single-ritual overlay, not the tab dots.
+    unitPhases: {},
     trigger: vi.fn(),
     retry: vi.fn(),
     dismiss: vi.fn(),

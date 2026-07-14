@@ -142,8 +142,19 @@
   border-radius: 50%;
   background: var(--faint);
 }
-.aim-console .ac-utab.on .ac-d {
+/* Cross-unit tab signal (aim `1-worktree-merge`'s cross-unit family). The dot
+   is the SIGNAL slot; active/inactive is the bottom-border only (`.ac-utab.on`
+   above), NOT the dot — so a `fresh` signal (cyan) never collides with what
+   used to be the active-tab cyan dot. Precedence-collapsed to one class per
+   dot (owed > fresh > idle) in `unit-signal.ts`. */
+.aim-console .ac-utab .ac-d.sig-owed {
+  background: var(--amber);
+}
+.aim-console .ac-utab .ac-d.sig-fresh {
   background: var(--cyan);
+}
+.aim-console .ac-utab .ac-d.sig-idle {
+  background: var(--dim);
 }
 .aim-console .ac-um {
   font-family: var(--mono);
