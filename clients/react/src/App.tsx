@@ -137,11 +137,6 @@ export function App() {
     return resolveUnitName(currentProject, slotsData?.slots ?? []);
   }, [currentProject, slotsData, slotsLoading]);
 
-  const unitReposForCurrent = useMemo(() => {
-    if (unitName === null) return null;
-    return slotsData?.slots.find((s) => s.name === unitName)?.repos ?? null;
-  }, [slotsData, unitName]);
-
   // ── Producer handoff-and-restart ritual (lifted to App level) ──
   //
   // Exactly ONE `useHandoffRitual` instance for the whole app. The
@@ -182,22 +177,24 @@ export function App() {
     return out;
   }, [slotsData, handoffUnitPhases]);
 
-  // The single live Producer for the focused unit. Drives the
-  // conversation-header gate (only show it when the selected agent IS
-  // this Producer), the failure dialog's Force-kill target, and its
-  // Resume-in-CC id. Shares the `findProducerForUnit` resolver with the
-  // digest button and the ctx readout so all surfaces agree.
-  //
-  // Cross-repo aware: when the units wire has resolved this unit's
-  // membership, we pass the full `UnitRepoWire[]` so the resolver can
-  // pin the Producer to the unit's PRIMARY repo even if `currentProject`
-  // happens to point at a non-primary repo. The single-path fallback
-  // keeps the resolver working pre-wire-load and for cwd-synthesized
-  // units that the units endpoint doesn't enumerate.
-  const producerForUnit = useMemo(
-    () => findProducerForUnit(agents, unitReposForCurrent ?? currentProject),
-    [agents, unitReposForCurrent, currentProject],
-  );
+  // The Producer of the unit the ESCALATED handoff ritual is for
+  // (`ritualState.unit`), resolved from the live membership — NOT from the
+  // focused unit. The handoff FAILURE dialog is shown for `ritualState.unit`
+  // regardless of which unit is focused, so every action it drives (Force-kill
+  // target, Retry, Resume-in-CC id) must target THAT unit. Deriving these from
+  // the focused unit mis-fired: a failed handoff whose Producer dropped from
+  // the live set auto-bounced focus (`FOCUS_GRACE_MS`) to another unit, and
+  // Force-kill then killed the WRONG, unopened unit's Producer
+  // (operator-reported 2026-07-15). `null` when the ritual's unit has no live
+  // Producer — the dialog then disables Force-kill / Resume rather than falling
+  // back to the focused unit's Producer. `findProducerForUnit` scoped to the
+  // ritual unit's own repos can only ever match that unit's Producer, so a
+  // cross-unit mis-kill is now structurally impossible.
+  const ritualUnitProducer = useMemo(() => {
+    if (ritualState.kind !== "escalated" || ritualState.unit === "") return null;
+    const repos = slotsData?.slots.find((s) => s.name === ritualState.unit)?.repos ?? null;
+    return repos === null ? null : findProducerForUnit(agents, repos);
+  }, [ritualState, slotsData, agents]);
 
   // Auto-dismiss `ready` with a brief success toast (handoff-lifecycle
   // DR §E overlay spec). Moved up from ProducerConsoleActions with the
@@ -214,20 +211,26 @@ export function App() {
   }, [ritualState.kind, dismissHandoff]);
 
   const handleHandoffRetry = useCallback(() => {
-    if (unitName === null) return;
-    void retryHandoff(unitName, { trigger: "manual" });
-  }, [retryHandoff, unitName]);
+    // Retry re-attempts the handoff for the unit the ritual FAILED for
+    // (`ritualState.unit`), not the focused unit — the failure dialog can be
+    // showing for a unit other than the focused one (see `ritualUnitProducer`).
+    if (ritualState.kind !== "escalated" || ritualState.unit === "") return;
+    void retryHandoff(ritualState.unit, { trigger: "manual" });
+  }, [retryHandoff, ritualState]);
 
   const handleHandoffForceKill = useCallback(async () => {
-    if (producerForUnit === null) return;
+    // Kill the RITUAL unit's Producer, never the focused unit's (see
+    // `ritualUnitProducer`). `null` → the ritual unit has no live Producer, so
+    // there is nothing to kill (the dialog's Force-kill is already disabled).
+    if (ritualUnitProducer === null) return;
     try {
-      await api.killAgent(producerForUnit.target);
+      await api.killAgent(ritualUnitProducer.target);
     } catch {
       // Best-effort — if the kill fails (already dead, etc.) we still
       // dismiss; the dialog already surfaced the upstream failure.
     }
     dismissHandoff();
-  }, [producerForUnit, dismissHandoff]);
+  }, [ritualUnitProducer, dismissHandoff]);
 
   // The "Open Producer terminal" affordance.
   //
@@ -504,7 +507,7 @@ export function App() {
           // The supervisor's `crash_loop_halted` halt is a different failure
           // than an operator-rejected handoff — manual relaunch, not retry.
           mode={ritualState.reason === "crash_loop_halted" ? "crash_loop" : "handoff"}
-          producerAgentId={producerForUnit?.id ?? null}
+          producerAgentId={ritualUnitProducer?.id ?? null}
           retryCount={handoffRetryCount}
           retryRefused={handoffRetryRefused}
           onForceKill={() => void handleHandoffForceKill()}
