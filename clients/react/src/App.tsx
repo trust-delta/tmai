@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AimConsole } from "@/components/aim-console/AimConsole";
 import { HandoffRitualFailureDialog } from "@/components/aim-console/HandoffRitualFailureDialog";
 import { HandoffRitualOverlay } from "@/components/aim-console/HandoffRitualOverlay";
+import { advanceCursor, unitHasUnobserved } from "@/components/aim-console/remote-delta";
 import {
   handoffOwesReview,
   resolveUnitSignal,
@@ -13,6 +14,7 @@ import { ProducerLaunchPicker } from "@/components/project/ProducerLaunchPicker"
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { useApplyTheme } from "@/hooks/useActiveTheme";
 import { useAgents } from "@/hooks/useAgents";
+import { useCrossUnitRemoteDelta } from "@/hooks/useCrossUnitRemoteDelta";
 import { useHandoffRitual } from "@/hooks/useHandoffRitual";
 import { useIdleNotification } from "@/hooks/useIdleNotification";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -31,6 +33,7 @@ import { closeUnitSlot } from "@/lib/close-unit-slot";
 import { currentProjectBelongsToLiveProject } from "@/lib/current-project";
 import { findProducerForUnit } from "@/lib/producer";
 import { useSSE } from "@/lib/sse-provider";
+import { useUIPref } from "@/lib/ui-prefs-provider";
 
 // Grace window before the focus auto-default bounces a unit whose Producer
 // briefly left the live set (handoff respawn / restart kill→relaunch) to
@@ -160,22 +163,55 @@ export function App() {
     retryRefused: handoffRetryRefused,
   } = useHandoffRitual();
 
+  // Remote-Δ freshness cursors (client-state, UIPrefs context). AimConsole
+  // owns the focused unit's close act (R-panel collapse → `collapseRemote`);
+  // App owns the cross-unit stamp below. Both write the SAME context field, so
+  // they stay in sync (the provider is a single source).
+  const [cursors, setCursors] = useUIPref("remoteDeltaCursors");
+
+  // Fan the remote-Δ read across every live unit (aim `cross-unit-remote-delta`).
+  // The focused-unit instrument only ever polled the one focused unit; this
+  // lifts the same per-unit PR / issue read to every tab so a NON-focused unit's
+  // unobserved artifact can light its tab. Keyed by unit name, 60s poll.
+  const slotNames = useMemo(() => (slotsData?.slots ?? []).map((s) => s.name), [slotsData]);
+  const crossUnitDelta = useCrossUnitRemoteDelta(slotNames);
+
+  // Tab-leave close act — the cross-unit analog of the R-panel collapse (aim
+  // `cross-unit-remote-delta` PROCESS: cursor = "when this tab was last looked
+  // at"). Switching focus AWAY from a unit stamps its `panel` cursor, so its
+  // freshness dot clears and only NEW activity re-lights it. This is the THIRD
+  // cursor-advance act (alongside the R-panel + section collapses) — still an
+  // explicit operator act, not a timer / visibilitychange (the operator-ratified
+  // exclusion list in remote-delta.ts). Needed because the panel-collapse close
+  // act only fires when the R panel is OPEN; switching tabs with it closed (the
+  // common case) would otherwise never advance a non-focused unit's cursor,
+  // pinning its dot on forever.
+  const prevUnitRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prev = prevUnitRef.current;
+    if (prev !== null && prev !== unitName) {
+      setCursors(advanceCursor(cursors, prev, "panel", new Date().toISOString()));
+    }
+    prevUnitRef.current = unitName;
+  }, [unitName, cursors, setCursors]);
+
   // Per-unit cross-unit tab signal (aim `1-worktree-merge`'s cross-unit
   // family). One dot per unit tab, precedence-collapsed (owed > fresh > idle).
-  // Only the `owed` source is wired today — a unit whose latest handoff phase
-  // is `awaiting_review` owes the operator a review act (aim
-  // `cross-unit-operator-owed`), surfaced even when that unit is NOT focused.
-  // `fresh` (`cross-unit-remote-delta`) / `idle` (`cross-unit-idle-passive`)
-  // sources drop in here later without re-architecting the tab.
+  // `owed` — a unit whose latest handoff phase is `awaiting_review` owes the
+  // operator a review act (aim `cross-unit-operator-owed`), surfaced even when
+  // NOT focused. `fresh` — a non-focused unit with any unobserved remote
+  // artifact (aim `cross-unit-remote-delta`). `idle` (`cross-unit-idle-passive`)
+  // drops in here later without re-architecting the tab.
   const unitSignals = useMemo(() => {
     const out: Record<string, UnitSignal | null> = {};
     for (const slot of slotsData?.slots ?? []) {
       out[slot.name] = resolveUnitSignal({
         owed: handoffOwesReview(handoffUnitPhases[slot.name]),
+        fresh: unitHasUnobserved(crossUnitDelta[slot.name], cursors, slot.name),
       });
     }
     return out;
-  }, [slotsData, handoffUnitPhases]);
+  }, [slotsData, handoffUnitPhases, crossUnitDelta, cursors]);
 
   // The Producer of the unit the ESCALATED handoff ritual is for
   // (`ritualState.unit`), resolved from the live membership — NOT from the

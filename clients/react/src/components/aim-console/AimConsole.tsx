@@ -177,8 +177,10 @@ export function AimConsole({
   const activeUnit = units.find((u) => u.name === activeUnitName) ?? null;
 
   // Remote-Δ freshness cursors (#822; #606 §1 lift) — the `remoteDeltaCursors`
-  // ui-pref is owned here (per-unit). Client state only, never sent to core;
-  // the Producer never reads it. `AimConsole` owns the cursor; `PrRail` is
+  // ui-pref (per-unit). Client state only, never sent to core; the Producer
+  // never reads it. `AimConsole` owns the FOCUSED unit's close act here; App
+  // owns the cross-unit tab-leave stamp (aim `cross-unit-remote-delta`) — both
+  // write the same UIPrefs field, which the context keeps in sync. `PrRail` is
   // presentational and only receives the effective cursors. The rail has ONE
   // close act — the rail
   // collapse — so it stamps the coarse `panel` cursor, which via `effectiveCursor`
