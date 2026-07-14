@@ -901,6 +901,18 @@
 }
 .aim-console .ac-footer.open {
   height: calc(var(--fh, 180px) + 33px);
+  /* Declarative ceiling — the footer may take at most FOOTER_MAX_SESSION_RATIO
+     (60%) of the Session pane, plus its 33px tab bar, so the conversation term
+     (.ac-term, flex:1 min-height:0) can never be crushed to ~0 and "replaced"
+     by the bash terminal. The JS reclamp (BashFooter, FOOTER_MAX_SESSION_RATIO)
+     enforced the same ceiling imperatively but was bypassable — it bailed on
+     short sessions, did not re-run on a cross-tab reseed, and the storage clamp
+     is floor-only — leaving a stale-large `--fh` to collapse the term. This
+     makes the browser enforce it CONTINUOUSLY. `%` resolves against the
+     definite-height `.ac-col.ac-session` grid item (the parent, and the very
+     element the JS measures via closest('.ac-session')); `.ac-ftbody` (flex:1)
+     reflows to the capped height. */
+  max-height: calc(60% + 33px);
 }
 .aim-console .ac-fbar {
   display: flex;
