@@ -275,6 +275,22 @@ export interface AgentSnapshot {
    *  `is_orchestrator?` mirror was removed (#836) so any read of the
    *  absent field is now a tsc error, not a silent `false`. */
   is_producer?: boolean;
+  /** Whether the agent's process / pane is gone (tmai-core decision
+   *  2026-05-07 Δ7). Orthogonal to `attention`; a finished agent's record
+   *  lingers so the console can show it stopped. Wire field `dead`
+   *  (`skip_serializing_if` → absent/falsy when alive). Hand-mirrored because
+   *  `AgentSnapshot` is serde-only on the Rust side. */
+  dead?: boolean;
+  /** True when the agent's terminal has been static beyond the idle threshold
+   *  — it is producing no output (a working CLI redraws a spinner; an idle one
+   *  is static). Vendor-neutral and hook-independent (tmai-core:
+   *  `terminal_changed_at` → `quiescent`, recomputed each ~2s sync cycle).
+   *  Drives the cross-unit idle-passive tab signal (aim
+   *  `cross-unit-idle-passive`): the hub folds a unit's Producer `quiescent` +
+   *  no non-quiescent worker into a dim idle dot. `skip_serializing_if` →
+   *  absent/falsy while the terminal is active; hand-mirrored because
+   *  `AgentSnapshot` is serde-only. */
+  quiescent?: boolean;
   /** Attention axis introduced by Step 4 of the agent-state attention
    *  rebuild (decision tmai-core@2026-05-07). `null` / absent on the
    *  wire encodes "unknown" — the sampler bootstrap window per Δ6.
