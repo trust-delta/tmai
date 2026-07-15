@@ -1,0 +1,9 @@
+# pnpm settings — moved here from package.json's `pnpm` field, which pnpm v11
+# no longer reads (it requires pnpm-workspace.yaml even for a single, non-
+# workspace project). See https://pnpm.io/settings.
+overrides:
+  picomatch: '>=4.0.4'
+  uuid: '>=14.0.0'
+  undici: '^7.28.0'
+onlyBuiltDependencies:
+  - esbuild
