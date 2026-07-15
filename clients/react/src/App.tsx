@@ -3,6 +3,7 @@ import { AimConsole } from "@/components/aim-console/AimConsole";
 import { HandoffRitualFailureDialog } from "@/components/aim-console/HandoffRitualFailureDialog";
 import { HandoffRitualOverlay } from "@/components/aim-console/HandoffRitualOverlay";
 import { advanceCursor, unitHasUnobserved } from "@/components/aim-console/remote-delta";
+import { unitIsIdle } from "@/components/aim-console/unit-idle";
 import {
   handoffOwesReview,
   resolveUnitSignal,
@@ -200,18 +201,20 @@ export function App() {
   // `owed` — a unit whose latest handoff phase is `awaiting_review` owes the
   // operator a review act (aim `cross-unit-operator-owed`), surfaced even when
   // NOT focused. `fresh` — a non-focused unit with any unobserved remote
-  // artifact (aim `cross-unit-remote-delta`). `idle` (`cross-unit-idle-passive`)
-  // drops in here later without re-architecting the tab.
+  // artifact (aim `cross-unit-remote-delta`). `idle` — the unit's Producer is
+  // quiescent (terminal producing no output) with no active worker (aim
+  // `cross-unit-idle-passive`); low-confidence, so `owed`/`fresh` collapse it.
   const unitSignals = useMemo(() => {
     const out: Record<string, UnitSignal | null> = {};
     for (const slot of slotsData?.slots ?? []) {
       out[slot.name] = resolveUnitSignal({
         owed: handoffOwesReview(handoffUnitPhases[slot.name]),
         fresh: unitHasUnobserved(crossUnitDelta[slot.name], cursors, slot.name),
+        idle: unitIsIdle(agents, slot.name, slot.repos),
       });
     }
     return out;
-  }, [slotsData, handoffUnitPhases, crossUnitDelta, cursors]);
+  }, [slotsData, handoffUnitPhases, crossUnitDelta, cursors, agents]);
 
   // The Producer of the unit the ESCALATED handoff ritual is for
   // (`ritualState.unit`), resolved from the live membership — NOT from the
