@@ -54,6 +54,7 @@ function stubAgent(partial: Partial<AgentSnapshot> & { id: string }): AgentSnaps
     team_info: partial.team_info ?? null,
     attention: partial.attention ?? null,
     is_producer: partial.is_producer,
+    dead: partial.dead,
   };
 }
 
@@ -391,5 +392,86 @@ describe("findProducerForUnit — restart-adopt (adopt-resilient is_producer + u
       // is_producer + unit deliberately omitted
     });
     expect(findProducerForUnit([producer], unit)).toBe(producer);
+  });
+});
+
+describe("findProducerForUnit — aligned with core predicate (!dead, !unit.is_empty)", () => {
+  // Core's Producer resolver (tmai-core handoff_ritual.rs) filters
+  // `is_producer && !dead && !unit.is_empty() && unit == unit`. This
+  // resolver mirrors the `!dead` and `!unit.is_empty()` clauses so core and
+  // UI agree on "who is a Producer" — otherwise a unit with exactly one live
+  // Producer plus a stray claude:-scheme session shows as >1 → null.
+
+  it("excludes a claude:-id agent with an EMPTY unit (mis-promoted bash) — real Producer still resolves", () => {
+    // Regression (tmai-core #690 residue): a hint-less `bash` sharing the
+    // primary repo's cwd got a `claude:<uuid>` id from the pre-fix transcript
+    // clobber. It carries `unit: ""` and is NOT a Producer. Before the guard
+    // it was admitted by the cwd rule, so the unit had 2 candidates → null →
+    // "no Producer" even though there is exactly one real Producer.
+    const producer = stubAgent({
+      id: "claude:prod-1",
+      cwd: "/repo",
+      git_common_dir: "/repo/.git",
+      is_worktree: false,
+      is_producer: true,
+      unit: "repo",
+    });
+    const phantomBash = stubAgent({
+      id: "claude:f673819b",
+      agent_type: { Custom: "bash" },
+      cwd: "/repo",
+      git_common_dir: "/repo/.git",
+      is_worktree: false,
+      unit: "", // hint-less: attributed to no unit
+      // is_producer omitted → false on the wire
+    });
+    expect(findProducerForUnit([producer, phantomBash], "/repo")).toBe(producer);
+  });
+
+  it("a lone empty-unit claude: agent at the primary cwd is NOT resolved as the Producer", () => {
+    const phantomBash = stubAgent({
+      id: "claude:f673819b",
+      agent_type: { Custom: "bash" },
+      cwd: "/repo",
+      git_common_dir: "/repo/.git",
+      is_worktree: false,
+      unit: "",
+    });
+    expect(findProducerForUnit([phantomBash], "/repo")).toBeNull();
+  });
+
+  it("excludes a `dead` agent even with is_producer + unit set", () => {
+    const deadProducer = stubAgent({
+      id: "claude:prod-dead",
+      cwd: "/var/stale",
+      git_common_dir: null,
+      is_worktree: false,
+      is_producer: true,
+      unit: "acme",
+      dead: true,
+    });
+    const live = stubAgent({
+      id: "claude:prod-live",
+      cwd: "/var/stale",
+      git_common_dir: null,
+      is_worktree: false,
+      is_producer: true,
+      unit: "acme",
+    });
+    // With the dead one filtered out, exactly the live Producer resolves.
+    expect(findProducerForUnit([deadProducer, live], "/works/acme/acme")).toBe(live);
+  });
+
+  it('preserves old-engine back-compat: an UNDEFINED unit (not "") still resolves via cwd', () => {
+    // The `unit === \"\"` guard must NOT catch an agent whose `unit` field is
+    // absent (old engine not serving it) — that path still resolves by cwd.
+    const producer = stubAgent({
+      id: "claude:prod-1",
+      cwd: "/repo",
+      git_common_dir: "/repo/.git",
+      is_worktree: false,
+      // unit + is_producer deliberately omitted (undefined, not "")
+    });
+    expect(findProducerForUnit([producer], "/repo")).toBe(producer);
   });
 });

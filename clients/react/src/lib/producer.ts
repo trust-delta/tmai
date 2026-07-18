@@ -118,6 +118,26 @@ export function findProducerForUnit(
   const candidates = agents.filter((a) => {
     if (!a.id.startsWith(PRODUCER_ID_SCHEME)) return false;
     if (a.is_worktree === true) return false;
+    // Align with core's own Producer predicate (`is_producer && !dead &&
+    // !unit.is_empty() && unit == unit` — tmai-core `handoff_ritual.rs`).
+    // React's resolver had diverged from it, which is the core↔UI asymmetry
+    // behind "every session shows as non-Producer": core marks every
+    // Producer-role session `is_producer` (past ones included) while this
+    // resolver, via the cwd rule below, ALSO admitted non-Producer agents —
+    // so a unit ended up with >1 candidate and returned null.
+    //
+    // (1) A dead session is never the live Producer.
+    if (a.dead === true) return false;
+    // (2) A `claude:`-scheme agent with an EXPLICITLY empty `unit` is
+    // attributed to no unit, so it is not this (or any) unit's Producer.
+    // This is the wire signature of a hint-less `bash` that a pre-fix
+    // transcript-clobber (tmai-core #690) mis-promoted to a `claude:<uuid>`
+    // id: it shares the primary repo's cwd and would otherwise be admitted
+    // by rule 3b, making a single-Producer unit ambiguous (>1 candidate →
+    // null → "no Producer"). Core excludes it via `!unit.is_empty()`; we
+    // mirror that. An OLD engine not serving `unit` leaves it `undefined`
+    // (NOT ""), so the pre-`is_producer` cwd back-compat (rule 3b) is intact.
+    if (a.unit === "") return false;
     // Rule 3a — adopt-resilient identity. Resolves the Producer at
     // restart-adopt, before the hook re-derives cwd. `is_producer`
     // narrows `unit` (which a worker shares) down to the single Producer,
