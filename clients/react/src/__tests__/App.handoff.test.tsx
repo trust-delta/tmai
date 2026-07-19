@@ -7,13 +7,14 @@
 // fix, App's aim-mode early return rendered only <AimConsole> and stranded the
 // overlay in the since-removed producer-mode branch below it, so a handoff from
 // the default surface showed nothing. `useHandoffRitual` is mocked so we can
-// drive `state` deterministically; AimConsole is stubbed to render its
+// drive `states` deterministically; AimConsole is stubbed to render its
 // `handoffOverlay` prop, and the overlay itself is the REAL component so we
 // assert on its phase rows.
 
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { RitualUiState } from "@/hooks/useHandoffRitual";
 import { type AgentSnapshot, api } from "@/lib/api";
 import { renderWithProviders } from "@/test/render";
 import type { SlotResponse } from "@/types/generated/SlotResponse";
@@ -100,15 +101,17 @@ function agent(overrides: { id: string; cwd?: string }): AgentSnapshot {
 
 function idleRitual() {
   return {
-    state: { kind: "idle" as const },
+    // Ritual UI state keyed per unit (absent key == idle). Empty == all idle.
+    states: {} as Record<string, RitualUiState>,
     // Per-unit latest handoff phase (cross-unit owed tab signal). Empty here —
-    // this file exercises the single-ritual overlay, not the tab dots.
+    // this file exercises the overlay, not the tab dots.
     unitPhases: {},
     trigger: vi.fn(),
     retry: vi.fn(),
     dismiss: vi.fn(),
-    retryCount: 0,
-    retryRefused: false,
+    // Retry budget keyed per unit (absent key == 0 / false).
+    retryCount: {} as Record<string, number>,
+    retryRefused: {} as Record<string, boolean>,
   };
 }
 
@@ -148,7 +151,7 @@ describe("App — handoff ritual wiring", () => {
     });
     useHandoffRitualMock.mockReturnValue({
       ...idleRitual(),
-      state: { kind: "in_progress", ritualId: "r-1", unit: "alpha", phases: [] },
+      states: { alpha: { kind: "in_progress", ritualId: "r-1", unit: "alpha", phases: [] } },
     });
 
     renderWithProviders(<App />);
@@ -160,8 +163,9 @@ describe("App — handoff ritual wiring", () => {
   });
 
   // Regression for the #674 front-side facet (tmai-core #676). The in-progress
-  // overlay is gated by `ritualState.unit === unitName` (App.tsx). `unitName`
-  // comes from `resolveUnitName(currentProject, slots)`; `ritualState.unit` is
+  // overlay reads `states[unitName]` (App.tsx `focusedRitual`), so it shows only
+  // when the focused unit resolves to the ritual's own unit key. `unitName`
+  // comes from `resolveUnitName(currentProject, slots)`; the ritual's unit key is
   // server-authoritative off the SSE stream. #674's mismatch was the backend
   // respawning the Producer at the PRIMARY repo root, collapsing the unit's
   // membership so a SECONDARY-repo `currentProject` matched no slot →
@@ -187,7 +191,7 @@ describe("App — handoff ritual wiring", () => {
     // The ritual's server unit is the wrapper unit "tmai".
     useHandoffRitualMock.mockReturnValue({
       ...idleRitual(),
-      state: { kind: "in_progress", ritualId: "r-1", unit: "tmai", phases: [] },
+      states: { tmai: { kind: "in_progress", ritualId: "r-1", unit: "tmai", phases: [] } },
     });
 
     renderWithProviders(<App />);
@@ -220,12 +224,14 @@ describe("App — handoff ritual wiring", () => {
     });
     useHandoffRitualMock.mockReturnValue({
       ...idleRitual(),
-      state: {
-        kind: "escalated",
-        ritualId: "r-1",
-        unit: "gamma",
-        reason: "handoff_timeout",
-        message: null,
+      states: {
+        gamma: {
+          kind: "escalated",
+          ritualId: "r-1",
+          unit: "gamma",
+          reason: "handoff_timeout",
+          message: null,
+        },
       },
     });
 
@@ -269,12 +275,14 @@ describe("App — handoff ritual wiring", () => {
     });
     useHandoffRitualMock.mockReturnValue({
       ...idleRitual(),
-      state: {
-        kind: "escalated",
-        ritualId: "r-1",
-        unit: "gamma",
-        reason: "rejected",
-        message: null,
+      states: {
+        gamma: {
+          kind: "escalated",
+          ritualId: "r-1",
+          unit: "gamma",
+          reason: "rejected",
+          message: null,
+        },
       },
     });
     const killSpy = vi.spyOn(api, "killAgent").mockResolvedValue(undefined);

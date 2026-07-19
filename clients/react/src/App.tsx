@@ -16,7 +16,7 @@ import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { useApplyTheme } from "@/hooks/useActiveTheme";
 import { useAgents } from "@/hooks/useAgents";
 import { useCrossUnitRemoteDelta } from "@/hooks/useCrossUnitRemoteDelta";
-import { useHandoffRitual } from "@/hooks/useHandoffRitual";
+import { type RitualUiState, useHandoffRitual } from "@/hooks/useHandoffRitual";
 import { useIdleNotification } from "@/hooks/useIdleNotification";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useNotificationConfig } from "@/hooks/useNotificationConfig";
@@ -155,7 +155,7 @@ export function App() {
   // 2026-05-23). Two hook instances would mean two overlays, so this
   // MUST remain the only one.
   const {
-    state: ritualState,
+    states: ritualStates,
     unitPhases: handoffUnitPhases,
     trigger: triggerHandoff,
     retry: retryHandoff,
@@ -216,13 +216,39 @@ export function App() {
     return out;
   }, [slotsData, handoffUnitPhases, crossUnitDelta, cursors, agents]);
 
+  // The FOCUSED unit's ritual UI state (absent key == idle). Drives the
+  // in-progress overlay in the conversation panel. Because state is now keyed
+  // per unit, a handoff parked at `awaiting_review` on unit A survives
+  // triggering/completing a handoff on unit B and re-appears when the operator
+  // switches back to A — the lost-review-gate bug (operator-reported
+  // 2026-07-19) the single app-global state used to cause.
+  const focusedRitual = unitName !== null ? ritualStates[unitName] : undefined;
+
+  // The escalated ritual surfaced by the app-global FAILURE dialog. Only one
+  // dialog can show at a time, so pick the focused unit's escalation if it has
+  // one, else any escalated unit. Deliberately NOT focus-gated: a failed
+  // handoff whose Producer dropped from the live set auto-bounces focus
+  // (`FOCUS_GRACE_MS`) to another unit, and the failure dialog must still show
+  // for the ORIGINAL unit — else the operator loses the failure entirely.
+  const escalatedRitual = useMemo<{ unit: string; state: RitualUiState } | null>(() => {
+    const pick = (unit: string, s: RitualUiState | undefined) =>
+      s?.kind === "escalated" && unit !== "" ? { unit, state: s } : null;
+    const focused = unitName !== null ? pick(unitName, ritualStates[unitName]) : null;
+    if (focused) return focused;
+    for (const [unit, s] of Object.entries(ritualStates)) {
+      const hit = pick(unit, s);
+      if (hit) return hit;
+    }
+    return null;
+  }, [ritualStates, unitName]);
+
   // The Producer of the unit the ESCALATED handoff ritual is for
-  // (`ritualState.unit`), resolved from the live membership — NOT from the
-  // focused unit. The handoff FAILURE dialog is shown for `ritualState.unit`
-  // regardless of which unit is focused, so every action it drives (Force-kill
-  // target, Retry, Resume-in-CC id) must target THAT unit. Deriving these from
-  // the focused unit mis-fired: a failed handoff whose Producer dropped from
-  // the live set auto-bounced focus (`FOCUS_GRACE_MS`) to another unit, and
+  // (`escalatedRitual.unit`), resolved from the live membership — NOT from the
+  // focused unit. The handoff FAILURE dialog is shown for that unit regardless
+  // of which unit is focused, so every action it drives (Force-kill target,
+  // Retry, Resume-in-CC id) must target THAT unit. Deriving these from the
+  // focused unit mis-fired: a failed handoff whose Producer dropped from the
+  // live set auto-bounced focus (`FOCUS_GRACE_MS`) to another unit, and
   // Force-kill then killed the WRONG, unopened unit's Producer
   // (operator-reported 2026-07-15). `null` when the ritual's unit has no live
   // Producer — the dialog then disables Force-kill / Resume rather than falling
@@ -230,46 +256,55 @@ export function App() {
   // ritual unit's own repos can only ever match that unit's Producer, so a
   // cross-unit mis-kill is now structurally impossible.
   const ritualUnitProducer = useMemo(() => {
-    if (ritualState.kind !== "escalated" || ritualState.unit === "") return null;
-    const repos = slotsData?.slots.find((s) => s.name === ritualState.unit)?.repos ?? null;
+    if (escalatedRitual === null) return null;
+    const repos = slotsData?.slots.find((s) => s.name === escalatedRitual.unit)?.repos ?? null;
     return repos === null ? null : findProducerForUnit(agents, repos);
-  }, [ritualState, slotsData, agents]);
+  }, [escalatedRitual, slotsData, agents]);
 
   // Auto-dismiss `ready` with a brief success toast (handoff-lifecycle
   // DR §E overlay spec). Moved up from ProducerConsoleActions with the
   // rest of the ritual UI.
+  // Any unit whose ritual reached `ready`. One toast at a time — if two units
+  // land ready together, the first is dismissed and the effect re-runs to pick
+  // up the next (rare; rituals are usually one-at-a-time per operator).
+  const readyUnit = useMemo(() => {
+    for (const [unit, s] of Object.entries(ritualStates)) {
+      if (s.kind === "ready") return unit;
+    }
+    return null;
+  }, [ritualStates]);
   const [handoffReadyToastVisible, setHandoffReadyToastVisible] = useState(false);
   useEffect(() => {
-    if (ritualState.kind !== "ready") return;
+    if (readyUnit === null) return;
     setHandoffReadyToastVisible(true);
     const t = setTimeout(() => {
       setHandoffReadyToastVisible(false);
-      dismissHandoff();
+      dismissHandoff(readyUnit);
     }, 2500);
     return () => clearTimeout(t);
-  }, [ritualState.kind, dismissHandoff]);
+  }, [readyUnit, dismissHandoff]);
 
   const handleHandoffRetry = useCallback(() => {
     // Retry re-attempts the handoff for the unit the ritual FAILED for
-    // (`ritualState.unit`), not the focused unit — the failure dialog can be
-    // showing for a unit other than the focused one (see `ritualUnitProducer`).
-    if (ritualState.kind !== "escalated" || ritualState.unit === "") return;
-    void retryHandoff(ritualState.unit, { trigger: "manual" });
-  }, [retryHandoff, ritualState]);
+    // (`escalatedRitual.unit`), not the focused unit — the failure dialog can
+    // be showing for a unit other than the focused one (see `ritualUnitProducer`).
+    if (escalatedRitual === null) return;
+    void retryHandoff(escalatedRitual.unit, { trigger: "manual" });
+  }, [retryHandoff, escalatedRitual]);
 
   const handleHandoffForceKill = useCallback(async () => {
     // Kill the RITUAL unit's Producer, never the focused unit's (see
     // `ritualUnitProducer`). `null` → the ritual unit has no live Producer, so
     // there is nothing to kill (the dialog's Force-kill is already disabled).
-    if (ritualUnitProducer === null) return;
+    if (ritualUnitProducer === null || escalatedRitual === null) return;
     try {
       await api.killAgent(ritualUnitProducer.target);
     } catch {
       // Best-effort — if the kill fails (already dead, etc.) we still
       // dismiss; the dialog already surfaced the upstream failure.
     }
-    dismissHandoff();
-  }, [ritualUnitProducer, dismissHandoff]);
+    dismissHandoff(escalatedRitual.unit);
+  }, [ritualUnitProducer, escalatedRitual, dismissHandoff]);
 
   // The "Open Producer terminal" affordance.
   //
@@ -513,13 +548,13 @@ export function App() {
   // (The terminal FAILURE dialog + ready toast + help stay app-global below —
   // a failure / completion is app-level news, not one panel's busy-state.)
   const handoffOverlay =
-    ritualState.kind === "dispatching" && unitName !== null ? (
+    unitName !== null && focusedRitual?.kind === "dispatching" ? (
       <HandoffRitualOverlay unitName={unitName} ritualId={null} phases={[]} />
-    ) : ritualState.kind === "in_progress" && ritualState.unit === unitName ? (
+    ) : unitName !== null && focusedRitual?.kind === "in_progress" ? (
       <HandoffRitualOverlay
-        unitName={ritualState.unit}
-        ritualId={ritualState.ritualId}
-        phases={ritualState.phases}
+        unitName={unitName}
+        ritualId={focusedRitual.ritualId}
+        phases={focusedRitual.phases}
       />
     ) : null;
 
@@ -538,20 +573,20 @@ export function App() {
     <>
       <HelpOverlay isOpen={showHelp} onClose={() => setShowHelp(false)} />
       <ToastContainer toasts={toast.toasts} onRemove={toast.removeToast} />
-      {ritualState.kind === "escalated" && ritualState.unit !== "" && (
+      {escalatedRitual !== null && escalatedRitual.state.kind === "escalated" && (
         <HandoffRitualFailureDialog
-          unitName={ritualState.unit}
-          reason={ritualState.reason}
-          message={ritualState.message}
+          unitName={escalatedRitual.unit}
+          reason={escalatedRitual.state.reason}
+          message={escalatedRitual.state.message}
           // The supervisor's `crash_loop_halted` halt is a different failure
           // than an operator-rejected handoff — manual relaunch, not retry.
-          mode={ritualState.reason === "crash_loop_halted" ? "crash_loop" : "handoff"}
+          mode={escalatedRitual.state.reason === "crash_loop_halted" ? "crash_loop" : "handoff"}
           producerAgentId={ritualUnitProducer?.id ?? null}
-          retryCount={handoffRetryCount}
-          retryRefused={handoffRetryRefused}
+          retryCount={handoffRetryCount[escalatedRitual.unit] ?? 0}
+          retryRefused={handoffRetryRefused[escalatedRitual.unit] ?? false}
           onForceKill={() => void handleHandoffForceKill()}
           onRetry={handleHandoffRetry}
-          onDismiss={dismissHandoff}
+          onDismiss={() => dismissHandoff(escalatedRitual.unit)}
         />
       )}
       {handoffReadyToastVisible && (
