@@ -42,13 +42,12 @@ describe("hasAttention — shared user-blocked-axis predicate (#583 §軸A)", ()
     expect(hasAttention(stubAgent({ attention: undefined }))).toBe(false);
   });
 
-  it.each<AgentAttention>([
-    "started",
-    "halted",
-    "completed",
-  ])("is true for the user-blocked state %s", (attention) => {
-    expect(hasAttention(stubAgent({ attention }))).toBe(true);
-  });
+  it.each<AgentAttention>(["started", "halted", "completed"])(
+    "is true for the user-blocked state %s",
+    (attention) => {
+      expect(hasAttention(stubAgent({ attention }))).toBe(true);
+    },
+  );
 
   it("counts the blocked agents in a mixed list (the StatusBar / group-badge use)", () => {
     const agents = [
