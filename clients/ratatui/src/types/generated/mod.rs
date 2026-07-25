@@ -6,6 +6,8 @@ pub mod action_origin;
 pub use action_origin::*;
 pub mod agent_attention;
 pub use agent_attention::*;
+pub mod aim_checkpoint_stale_wire;
+pub use aim_checkpoint_stale_wire::*;
 pub mod aim_create_request;
 pub use aim_create_request::*;
 pub mod aim_drift_wire;
