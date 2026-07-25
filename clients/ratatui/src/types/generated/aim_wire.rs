@@ -13,7 +13,11 @@ pub struct AimWire {
     pub aim: String,
     pub body: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub checkpoint_stale: Option<AimCheckpointStaleWire>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub drift: Option<AimDriftWire>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_verified: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent: Option<Value>,
     pub slug: String,
