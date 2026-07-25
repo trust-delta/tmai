@@ -31,6 +31,8 @@ function aimStub(overrides: Partial<AimWire> & Pick<AimWire, "slug">): AimWire {
     body: "",
     drift: null,
     working_delta: null,
+    last_verified: null,
+    checkpoint_stale: null,
     ...overrides,
   };
 }

@@ -144,9 +144,15 @@ function parseState(token: string | null): AimState {
 }
 
 // Parse one `docs/aims/<slug>.md` file's raw text into an `AimWire`. The
-// git-derived fields (`drift` / `working_delta`) are `null` (no engine / git
-// analysis offline); progress is read from the body's `# PROCESS` section
-// downstream. Throws on a malformed record.
+// git-derived fields (`drift` / `working_delta` / `checkpoint_stale`) are `null`
+// (no engine / git analysis offline); progress is read from the body's
+// `# PROCESS` section downstream. Throws on a malformed record.
+//
+// `last_verified` IS parsed, unlike those three: it is a human-authored
+// frontmatter field that lives in the file, not a computed signal. Dropping it
+// here would make the offline read disagree with the engine's read of the same
+// file. (`checkpoint_stale` is the computed counterpart and stays `null` —
+// only the read endpoint, which has the repo history, can populate it.)
 export function fileToAimWire(slug: string, raw: string): AimWire {
   const split = splitFrontmatter(raw);
   if (split === null) {
@@ -165,9 +171,11 @@ export function fileToAimWire(slug: string, raw: string): AimWire {
     aim,
     parent: parent === null ? null : parent,
     state,
+    last_verified: fieldValue(lines, "last-verified"),
     body: split.body,
     drift: null,
     working_delta: null,
+    checkpoint_stale: null,
   };
 }
 

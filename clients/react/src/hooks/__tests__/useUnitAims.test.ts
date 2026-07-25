@@ -44,6 +44,8 @@ function response(unit: string, count: number): AimsResponse {
           body: "",
           drift: null,
           working_delta: null,
+          last_verified: null,
+          checkpoint_stale: null,
         })),
       },
     ],

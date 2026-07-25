@@ -665,6 +665,25 @@
           "completed"
         ]
       },
+      "AimCheckpointStaleWire": {
+        "type": "object",
+        "description": "Wall-clock checkpoint-staleness for one aim node — the wire projection of\n[`crate::workbench::compose::AimCheckpointStaleItem`]. A fourth type, separate\nfrom [`AimDriftWire`] / [`AimWorkingDeltaWire`], because it states a different\nKIND of fact: those two are aim⊥aim (corpus order / working-tree presence),\nthis one is aim⊥code — how far the repo has moved past the checkpoint the\noperator last verified the node's claim at. The footprint is deliberately NOT\nnarrowed to the aim's own code (the provenance join is deferred), so this is a\n*candidate to re-verify*, never a drift verdict — the verdict stays the\nhuman's done-frontier (aim `aim-code-drift`).",
+        "required": [
+          "checkpoint_sha",
+          "commits_since"
+        ],
+        "properties": {
+          "checkpoint_sha": {
+            "type": "string",
+            "description": "The `last-verified` checkpoint the staleness is measured from (short sha)."
+          },
+          "commits_since": {
+            "type": "integer",
+            "description": "How many commits the repo has moved since that checkpoint. Always at or\nabove the VoI floor — below-floor and unresolvable checkpoints never\nreach the wire.",
+            "minimum": 0
+          }
+        }
+      },
       "AimCreateRequest": {
         "type": "object",
         "description": "`POST /api/units/{unit}/aims` request — create a new aim node (graduation\nStage 2-A). `state` defaults to `open` server-side (not on the wire), the\nbody starts empty, and no cross-edges are written. `slug` is the\noperator-chosen, NON-dated, kebab / filename-safe, **unique** node identity\n(`docs/aims/<slug>.md`).",
@@ -770,6 +789,17 @@
             "type": "string",
             "description": "The markdown interior (everything after the frontmatter), for the\nR-panel detail pane. May be empty (a frontmatter-only node). Kept verbatim."
           },
+          "checkpoint_stale": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AimCheckpointStaleWire",
+                "description": "Wall-clock checkpoint-staleness for this node (aim `aim-code-drift`, the\n**weak** layer): the repo has moved far past the node's `last-verified`\ncheckpoint, so the node's claim is a *candidate to re-verify*. A fourth\nSEPARATE field and type on purpose — the drift / working-delta layers are\naim⊥aim facts, this one is aim⊥code, and it is deliberately UN-narrowed to\nthe aim's footprint (provenance join deferred), so it must never be read\nas a drift verdict. `null` / absent when the node is uncast, its\ncheckpoint is unresolvable, or the repo has not moved past the VoI floor.\nPopulated **only** by the read endpoint; [`Self::from_record`] leaves it\n`None` (a single-record write has no repo-history context)."
+              }
+            ]
+          },
           "drift": {
             "oneOf": [
               {
@@ -780,6 +810,13 @@
                 "description": "Stale-from-ancestor drift, if this node drifted (some ancestor's `aim:`\nanchor moved after the node last changed). `null` / absent when current.\nComputed on read by reusing [`crate::workbench::compose::aim_drift`] — the\nsame parent-only (v1) verdict the Producer hand-over's `tmai-aim-drift`\nfence carries (one source of truth). Populated **only** by the read\nendpoint; [`Self::from_record`] leaves it `None`, because the single-record\nwrite endpoints have no corpus context to walk the ancestor chain."
               }
             ]
+          },
+          "last_verified": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The sparse 4th human field `last-verified` — the commit the operator last\nre-verified this node's claim against (aim `aim-code-drift`). `null` /\nabsent is the first-class **uncast** third state (never yet checkpointed),\nnot \"stale\": most of the corpus is uncast and that is the design. Carried\non the record itself (unlike [`Self::checkpoint_stale`], which is a\ncomputed read-side signal), so the write endpoints round-trip it too."
           },
           "parent": {
             "type": [
