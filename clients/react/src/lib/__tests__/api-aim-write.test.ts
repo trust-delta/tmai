@@ -29,6 +29,8 @@ const NODE: AimWire = {
   body: "",
   drift: null,
   working_delta: null,
+  last_verified: null,
+  checkpoint_stale: null,
 };
 
 function jsonResponse(body: unknown, status = 200): Response {
