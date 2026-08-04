@@ -9,22 +9,9 @@ crates/tmai-app/web/tsconfig.tsbuildinfo
 # surface as untracked when hub branches are checked out in the same worktree.
 /crates/tmai-app/
 
-# AI assistants
-CLAUDE.md
+# AI Local Settings
 CLAUDE.local.md
-AGENTS.md
-GEMINI.md
-.claude/
-knowledge/
-.codex*
-.gemini/
-.cursor/
-.cursorrules
-.windsurfrules
-.aider*
-
-# tmai dispatch state (per-local-environment)
-.task-meta/
+.claude/settings.local.json
 
 # IDE / Editor
 .idea/
