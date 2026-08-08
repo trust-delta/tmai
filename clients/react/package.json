@@ -28,7 +28,7 @@
     "@xyflow/react": "^12.11.2",
     "clsx": "^2",
     "lucide-react": "^1.25",
-    "mermaid": "^11.16.0",
+    "mermaid": "^11.16.1",
     "react": "^19.2.7",
     "react-dom": "19.2.7",
     "react-markdown": "^10.1.0",
