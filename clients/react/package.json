@@ -27,26 +27,26 @@
     "@xterm/xterm": "^6.0.0",
     "@xyflow/react": "^12.11.2",
     "clsx": "^2",
-    "lucide-react": "^1.25",
-    "mermaid": "^11.16.0",
-    "react": "^19.2.7",
-    "react-dom": "19.2.7",
+    "lucide-react": "^1.30",
+    "mermaid": "^11.16.1",
+    "react": "^19.2.8",
+    "react-dom": "19.2.8",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.4",
+    "@biomejs/biome": "^2.5.7",
     "@tailwindcss/vite": "^4",
     "@testing-library/react": "^16.3.2",
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.1.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4",
     "typescript": "~7.0",
-    "vite": "^8.1.5",
+    "vite": "^8.2.1",
     "vitest": "^4.1.10"
   }
 }
